@@ -21,3 +21,5 @@ services:
         sync: false
       - key: OPENROUTER_MODEL
         value: anthropic/claude-sonnet-5.5
+      - key: AI_DAILY_LIMIT
+        value: "150"

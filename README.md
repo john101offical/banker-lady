@@ -98,6 +98,7 @@ Copy `.env.example` to `.env` and fill it in:
 | `MEMBER_EMAILS` | Optional per-member sandbox accounts, e.g. `marcia=sb-1@personal.example.com,devon=sb-2@personal.example.com` |
 | `OPENROUTER_API_KEY` | Turns on the AI banker through [OpenRouter](https://openrouter.ai/keys). |
 | `OPENROUTER_MODEL` | Optional. Defaults to `anthropic/claude-sonnet-5.5`; `anthropic/claude-haiku-5.5` answers faster and costs less. |
+| `AI_DAILY_LIMIT` | Optional. AI calls allowed per day across the whole app, at roughly 3 cents each. Defaults to 150. Past it, the offline banker answers. |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Optional alternative: call Claude directly instead of through OpenRouter. Used only when no OpenRouter key is set. |
 
 Sandbox checklist:
@@ -111,6 +112,8 @@ Sandbox checklist:
 ### Deploy on Render
 
 Create a new **Blueprint** on Render from this repository. It reads `render.yaml`, asks for the environment variables above, and gives you a public URL.
+
+On the free plan the service sleeps when idle, so open the URL a minute before you need it. State is in memory, so waking up reloads the demo and creates a new set of sandbox invoices. There's no sign-in, so limits per visitor and `AI_DAILY_LIMIT` keep strangers from running up the AI bill.
 
 ## Project layout
 

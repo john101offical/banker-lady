@@ -8,6 +8,7 @@ import { answerLedgerQuestion } from './banker/ledger.js';
 import { readCircleDescription } from './banker/setup.js';
 import { aiModel, aiProvider, hasOpenRouter } from './config.js';
 import { cleanDraft } from './domain/setup.js';
+import { aiBudget, perVisitor } from './limits.js';
 import { gateway } from './paypal/index.js';
 import { demoDraft, loadDraft, loadScene } from './seed.js';
 import { store } from './store.js';
@@ -19,7 +20,14 @@ store.mode = {
 };
 
 export const app = express();
+// Render's proxy passes on the visitor's address. Someone could fake it, but the daily AI limit still holds.
+app.set('trust proxy', true);
 app.use(express.json({ limit: '64kb' }));
+
+const anyChange = perVisitor(60);
+const aiCall = perVisitor(20);
+const sendsInvoices = perVisitor(6);
+app.use('/api', (req, res, next) => (req.method === 'POST' ? anyChange(req, res, next) : next()));
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
 const route =
@@ -65,6 +73,7 @@ app.get('/api/stream', (req, res) => {
 
 app.post(
   '/api/messages',
+  aiCall,
   route((req) => {
     const thread = String(req.body?.thread ?? '');
     const text = String(req.body?.text ?? '').trim().slice(0, 2000);
@@ -123,6 +132,7 @@ app.post(
 
 app.post(
   '/api/week/advance',
+  sendsInvoices,
   route(async () => ({ result: await actions.advanceWeek() })),
 );
 
@@ -133,6 +143,7 @@ app.post(
 
 app.post(
   '/api/ledger/ask',
+  aiCall,
   route(async (req) => {
     const question = String(req.body?.question ?? '').trim().slice(0, 300);
     if (!question) throw Object.assign(new Error('Ask a question first.'), { status: 400 });
@@ -149,10 +160,11 @@ app.get('/api/setup/template', (_req, res) => {
 
 app.post(
   '/api/setup/read',
+  aiCall,
   route(async (req) => {
     const description = String(req.body?.description ?? '').trim().slice(0, 4000);
     if (!description) throw Object.assign(new Error('Describe your circle first.'), { status: 400 });
-    if (!hasOpenRouter) throw Object.assign(new Error('No AI key is set, so use the form.'), { status: 503 });
+    if (!hasOpenRouter || !aiBudget.take()) throw Object.assign(new Error('The AI model is unavailable right now.'), { status: 503 });
     try {
       return await readCircleDescription(description, utcToday());
     } catch (e) {
@@ -181,11 +193,13 @@ app.post(
 
 app.post(
   '/api/setup/start',
+  sendsInvoices,
   route(async () => ({ result: await actions.startCircle() })),
 );
 
 app.post(
   '/api/demo/reset',
+  sendsInvoices,
   route(async (req) => {
     await loadScene(String(req.body?.scene ?? 'demo'));
     return { ok: true };

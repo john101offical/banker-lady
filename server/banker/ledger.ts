@@ -4,6 +4,7 @@
 import { LEDGER_COLUMNS, ledgerRows, type LedgerAnswer, type LedgerColumn, type LedgerRow } from '../../shared/ledger.js';
 import type { Snapshot } from '../../shared/types.js';
 import { config, hasOpenRouter } from '../config.js';
+import { aiBudget } from '../limits.js';
 import { store } from '../store.js';
 import { openRouterJson } from './openrouter.js';
 
@@ -234,7 +235,7 @@ Use only values and names from the lists above. If it isn't about the ledger, se
 export async function answerLedgerQuestion(question: string, snap: Pick<Snapshot, 'circle' | 'members' | 'hands' | 'draws'>): Promise<LedgerAnswer> {
   const rows = ledgerRows(snap);
   const week = snap.circle.currentWeek;
-  if (!hasOpenRouter) return ledgerByRules(question, rows, week);
+  if (!hasOpenRouter || !aiBudget.take()) return ledgerByRules(question, rows, week);
   try {
     const raw = (await openRouterJson({
       apiKey: config.openrouter.apiKey,

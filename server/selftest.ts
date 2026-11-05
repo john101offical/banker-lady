@@ -379,6 +379,31 @@ const many = buildFilterModel([{ column: 'member', match: 'any', conditions: Arr
 assert.equal(many.member.conditions.length, 4, 'the grid allows four');
 console.log('✓ only real columns and operators reach the grid');
 
+// 18. A public URL can't run up the bill or hammer PayPal. Going over never breaks the demo.
+const { dailyBudget } = await import('./limits.js');
+let day = '2026-11-05';
+let spent = 0;
+const budget = dailyBudget(2, () => (spent += 1), () => day);
+assert.deepEqual([budget.take(), budget.take(), budget.take(), budget.take()], [true, true, false, false]);
+assert.equal(spent, 1, 'the limit is announced once');
+day = '2026-11-06';
+assert.equal(budget.take(), true, 'a new day starts fresh');
+const hit = (path: string, body: unknown = {}) =>
+  fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.7' }, body: JSON.stringify(body) });
+const statuses: number[] = [];
+for (let i = 0; i < 21; i++) statuses.push((await hit('/api/ledger/ask', { question: 'who paid cash?' })).status);
+assert.equal(statuses.filter((s) => s === 200).length, 20);
+assert.equal(statuses.at(-1), 429);
+const someoneElse = await fetch(`${base}/api/ledger/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.8' }, body: JSON.stringify({ question: 'who paid cash?' }) });
+assert.equal(someoneElse.status, 200, 'one busy visitor does not lock out anyone else');
+const resets: number[] = [];
+for (let i = 0; i < 7; i++) resets.push((await hit('/api/demo/reset')).status);
+assert.equal(resets.filter((s) => s === 200).length, 6);
+assert.equal(resets.at(-1), 429, 'invoices are limited harder');
+assert.equal((await fetch(`${base}/api/health`)).status, 200);
+server.close();
+console.log('✓ limits hold per visitor and per day, and one visitor does not block another');
+
 console.log('\nActivity (newest first):');
 for (const a of store.state.activity.slice(0, 14)) console.log(` - [${a.kind}] ${a.text}`);
 console.log('\nAll checks passed.');

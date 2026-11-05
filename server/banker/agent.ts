@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Message } from '../../shared/types.js';
 import { statusFor } from '../actions.js';
 import { aiProvider, config, hasClaude } from '../config.js';
+import { aiBudget } from '../limits.js';
 import { explainOrder, weekDate } from '../domain/circle.js';
 import { longDay } from '../domain/dates.js';
 import { store, type ServerMember } from '../store.js';
@@ -162,7 +163,7 @@ export async function bankerRespond(thread: string): Promise<void> {
   store.setTyping(thread, true);
   try {
     let text: string;
-    if (aiProvider !== 'offline') {
+    if (aiProvider !== 'offline' && aiBudget.take()) {
       try {
         text = aiProvider === 'openrouter' ? await viaOpenRouter(thread, role, speaker) : await claudeReply(thread, role, speaker);
       } catch (e) {

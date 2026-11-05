@@ -32,6 +32,8 @@ export const config = {
   memberEmails: parseEmails(process.env.MEMBER_EMAILS),
   /** Fallback PayPal email for members without one (a sandbox personal account). */
   defaultMemberEmail: process.env.SANDBOX_BUYER_EMAIL?.trim() ?? '',
+  /** AI calls allowed per day across the whole app, at roughly 3 cents each. */
+  aiDailyLimit: Number(process.env.AI_DAILY_LIMIT) > 0 ? Number(process.env.AI_DAILY_LIMIT) : 150,
   /** How often to check PayPal for paid invoices and settled payouts, in sandbox mode. */
   pollSeconds: Number(process.env.PAYPAL_POLL_SECONDS ?? 8),
 };
