@@ -119,13 +119,16 @@ On the free plan the service sleeps when idle, so open the URL a minute before y
 
 ```
 server/
-  index.ts            HTTP API, live updates (server-sent events), static web app
+  index.ts            starts everything
+  app.ts              HTTP API, live updates (server-sent events), static web app
+  limits.ts           limits per visitor and per day, for a public URL with no sign-in
   actions.ts          everything that changes the circle; used by buttons, Claude and offline mode alike
   domain/circle.ts    draw order solver, swap options, risk
   paypal/             sandbox (real REST calls) and mock gateways
-  banker/             Claude agent, tools, offline rules, message templates
+  banker/             Claude agent, tools, offline rules, message templates,
+                      reading a new circle, answering ledger questions
   seed.ts             the demo circle
-shared/types.ts       types shared by server and web
+shared/               types and ledger rows shared by server and web
 web/src/              React app: the book, phones, Bryntum timeline, AG Grid ledger
 ```
 

@@ -15,8 +15,6 @@ services:
         sync: false
       - key: SANDBOX_BUYER_EMAIL
         sync: false
-      - key: MEMBER_EMAILS
-        sync: false
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL

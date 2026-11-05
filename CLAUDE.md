@@ -13,6 +13,7 @@ Banker Lady is an AI banker for partner (susu, tanda, committee) savings circles
 
 ## Map
 
+- `server/index.ts` starts everything; `server/app.ts` is the HTTP API, so `npm test` can call it. `server/limits.ts` holds the limits per visitor and `AI_DAILY_LIMIT`: there's no sign-in on the public URL.
 - `server/actions.ts`: every change to the circle goes through here (invoices, cash, reminders, swaps, approvals, payouts, week changes). Buttons, Claude's tools and offline mode all call these same functions.
 - `server/domain/circle.ts`: draw-order solver (Hungarian algorithm), plain-language reasons, swap options with `harmDays`, risk.
 - `server/paypal/sandbox.ts`: real PayPal REST calls (Invoicing v2, Payouts v1). `mock.ts` simulates them when no keys are set.
