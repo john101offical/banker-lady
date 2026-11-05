@@ -3,6 +3,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+/** A hung model must not leave a chat waiting forever; the offline rules take over instead. */
+const TIMEOUT_MS = 60_000;
 
 interface ToolCall {
   id: string;
@@ -38,7 +40,9 @@ export class OpenRouterError extends Error {
   }
 }
 
-async function complete(o: OpenRouterOptions, messages: ChatMessage[]) {
+type Connection = Pick<OpenRouterOptions, 'apiKey' | 'siteUrl'>;
+
+async function post(o: Connection, body: Record<string, unknown>) {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
     headers: {
@@ -47,16 +51,8 @@ async function complete(o: OpenRouterOptions, messages: ChatMessage[]) {
       'X-Title': 'Banker Lady',
       ...(o.siteUrl ? { 'HTTP-Referer': o.siteUrl } : {}),
     },
-    body: JSON.stringify({
-      model: o.model,
-      messages,
-      tools: o.tools.map((t) => ({
-        type: 'function',
-        function: { name: t.name, description: t.description, parameters: t.input_schema },
-      })),
-      tool_choice: 'auto',
-      max_tokens: 1500,
-    }),
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const data: any = await res.json().catch(() => ({}));
   if (!res.ok || data?.error) {
@@ -67,6 +63,50 @@ async function complete(o: OpenRouterOptions, messages: ChatMessage[]) {
   if (!choice) throw new OpenRouterError('OpenRouter returned no answer');
   if (choice.error) throw new OpenRouterError(`OpenRouter: ${choice.error.message ?? 'model error'}`);
   return choice as { message: ChatMessage & { tool_calls?: ToolCall[] }; finish_reason?: string };
+}
+
+async function complete(o: OpenRouterOptions, messages: ChatMessage[]) {
+  return post(o, {
+    model: o.model,
+    messages,
+    tools: o.tools.map((t) => ({
+      type: 'function',
+      function: { name: t.name, description: t.description, parameters: t.input_schema },
+    })),
+    tool_choice: 'auto',
+    max_tokens: 1500,
+  });
+}
+
+export interface JsonRequest extends Connection {
+  model: string;
+  system: string;
+  user: string;
+  schemaName: string;
+  schema: Record<string, unknown>;
+  maxTokens: number;
+}
+
+/** One question, answered as JSON that fits the schema. The caller still validates what it means. */
+export async function openRouterJson(o: JsonRequest): Promise<unknown> {
+  const choice = await post(o, {
+    model: o.model,
+    messages: [
+      { role: 'system', content: o.system },
+      { role: 'user', content: o.user },
+    ],
+    response_format: { type: 'json_schema', json_schema: { name: o.schemaName, strict: true, schema: o.schema } },
+    // Only use a provider that really enforces the schema.
+    provider: { require_parameters: true },
+    max_tokens: o.maxTokens,
+  });
+  if (choice.finish_reason === 'length') throw new OpenRouterError('The model ran out of room before finishing its answer.');
+  const content = typeof choice.message?.content === 'string' ? choice.message.content.trim() : '';
+  try {
+    return JSON.parse(content);
+  } catch {
+    throw new OpenRouterError('The model did not answer in the expected form.');
+  }
 }
 
 /** Runs the tool loop until the model answers in words. Returns that answer. */

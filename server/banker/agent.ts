@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Member, Message } from '../../shared/types.js';
 import { statusFor } from '../actions.js';
 import { aiProvider, config, hasClaude } from '../config.js';
-import { weekDate } from '../domain/circle.js';
+import { explainOrder, weekDate } from '../domain/circle.js';
 import { longDay } from '../domain/dates.js';
 import { store } from '../store.js';
 import { offlineReply } from './offline.js';
@@ -32,6 +32,17 @@ function systemPrompt(role: Role, speaker: Member): string {
   return [
     `You are Banker Lady, the AI banker for "${c.name}", a partner: a rotating savings circle (also called susu, tanda or committee). ${n} members each throw a hand of $${c.handAmount} every week, and each week one member takes the whole draw of $${c.handAmount * n}. Real money moves through PayPal: every hand is a PayPal invoice (or cash recorded on that invoice), and every draw is paid with PayPal Payouts.`,
     who,
+    ...(c.phase === 'draft'
+      ? [
+          `This circle is still a draft: the host is checking the draw order, no PayPal invoices have gone out, and no hands are due until the host taps Send the first invoices in the app.${
+            role === 'host'
+              ? ` Why each draw falls where it does: ${explainOrder(c, s.members, s.draws, s.swaps)
+                  .map((p) => `Week ${p.week}, ${store.member(p.memberId).callName}: ${p.reason}`)
+                  .join(' ')}`
+              : ''
+          }`,
+        ]
+      : []),
     `Today is in Week ${c.currentWeek}; this week's draw is on ${longDay(weekDate(c, c.currentWeek))}, which is ${weekDate(c, c.currentWeek)}. Tool dates use that year. Snapshot (use tools for anything that may have changed): ${JSON.stringify(statusFor())}`,
     `How you work:
 - Warm, calm and brief: one to three short sentences, like a trusted auntie who keeps a tidy book. Address people by their call name.

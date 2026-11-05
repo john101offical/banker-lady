@@ -8,7 +8,8 @@ process.env.PAYPAL_CLIENT_SECRET = '';
 process.env.OPENROUTER_API_KEY = '';
 process.env.ANTHROPIC_API_KEY = '';
 
-const { buildDemoScene, loadScene } = await import('./seed.js');
+const { buildDemoScene, demoDraft, loadDraft, loadScene } = await import('./seed.js');
+const { cleanDraft, memberId, nextMonday } = await import('./domain/setup.js');
 const actions = await import('./actions.js');
 const { bankerRespond } = await import('./banker/agent.js');
 const { store } = await import('./store.js');
@@ -124,6 +125,102 @@ await cash;
 gateway.recordPayment = recordPayment;
 assert.equal(thanks(), before + 1);
 console.log('✓ cash recorded once when the poll overlaps it');
+
+// 12. A new circle: the draft is cleaned up whoever wrote it.
+const TODAY = '2026-11-05';
+assert.equal(nextMonday('2026-11-05'), '2026-11-09'); // a Thursday
+assert.equal(nextMonday('2026-11-09'), '2026-11-16'); // a Monday means the next one
+const person = (name: string, extra = {}) => ({ name, ...extra });
+const tidy = cleanDraft(
+  {
+    handAmount: 25.555,
+    startDate: '2026-02-31',
+    members: [
+      person('  Ana Lopez ', { isNew: true, needBy: '2026-13-01', language: 'klingon' }),
+      person('Ana Lopez', { needBy: '2027-01-15' }),
+      person(''),
+      'not a person',
+    ],
+  },
+  TODAY,
+);
+assert.deepEqual(tidy.problems, []);
+assert.equal(tidy.draft.name, 'My partner');
+assert.equal(tidy.draft.handAmount, 25.56);
+assert.equal(tidy.draft.startDate, '2026-11-09', 'a date that does not exist falls back to next Monday');
+assert.deepEqual(tidy.draft.members.map((m) => m.name), ['Ana Lopez', 'Ana Lopez 2']);
+assert.equal(tidy.draft.members[0].needBy, null);
+assert.equal(tidy.draft.members[0].language, 'en');
+assert.deepEqual(tidy.draft.members.map((m) => m.isHost), [false, true], 'the first person who is not new hosts when nobody is named');
+const twoHosts = cleanDraft({ handAmount: 5, members: [person('A', { isHost: true }), person('B', { isHost: true }), person('C')] }, TODAY);
+assert.deepEqual(twoHosts.draft.members.map((m) => m.isHost), [true, false, false]);
+assert.equal(cleanDraft({ handAmount: 5, members: [person('Solo')] }, TODAY).problems.length, 1);
+assert.equal(cleanDraft({ handAmount: 5, members: Array.from({ length: 13 }, (_, i) => person(`P${i}`)) }, TODAY).problems.length, 1);
+for (const hand of [0, -5, 'lots', null, 50_000]) {
+  assert.equal(cleanDraft({ handAmount: hand, members: [person('A'), person('B')] }, TODAY).problems.length, 1, `hand ${hand}`);
+}
+const taken = new Set(['joyce']);
+assert.equal(memberId('Joyce Reid', taken), 'joyce2');
+assert.equal(memberId('Miss José Peña', new Set()), 'jose');
+assert.equal(memberId('Host Person', new Set()), 'host2', 'the host console keeps its thread');
+assert.equal(memberId('李', new Set()), 'member');
+assert.ok(memberId('Bartholomew-Maximilian', new Set(['bartholo'])).length <= 10);
+console.log('✓ drafts are cleaned up');
+
+// 13. The order shows with its reasons before PayPal hears anything.
+let invoicesCreated = 0;
+const createAndSend = gateway.createAndSendInvoice.bind(gateway);
+gateway.createAndSendInvoice = async (req) => {
+  invoicesCreated += 1;
+  return createAndSend(req);
+};
+loadDraft(demoDraft(TODAY));
+const draftSnap = store.snapshot();
+assert.equal(draftSnap.circle.phase, 'draft');
+assert.deepEqual(draftSnap.circle.drawOrder, ['joyce', 'andre', 'kezia', 'devon', 'pauline', 'marcia'], 'same order as the demo');
+assert.equal(draftSnap.plan.length, 6);
+assert.match(draftSnap.plan.find((p) => p.memberId === 'devon')!.reason, /New to the circle/);
+assert.ok(draftSnap.hands.every((h) => h.status === 'upcoming' && !h.invoiceId));
+assert.match(await actions.recordCash('joyce'), /isn't due yet/);
+assert.match(await actions.sendReminder('devon'), /isn't due yet/);
+assert.match(await actions.advanceWeek(), /Send the first invoices/);
+assert.match(actions.requestPayout(), /Not yet/);
+await say('host', 'Joyce gave me cash');
+assert.match(lastBanker('host') ?? '', /Nothing has gone to PayPal/);
+await say('devon', 'How do I pay?');
+assert.match(lastBanker('devon') ?? '', /Week 4/);
+assert.equal(store.hand('joyce', 1)!.status, 'upcoming', 'the banker cannot record a hand in a draft');
+assert.equal(invoicesCreated, 0, 'no invoices before the host confirms');
+console.log('✓ a draft shows reasons and sends nothing →', draftSnap.plan[3].reason);
+
+// 14. Only the host's tap sends them, and only once.
+await Promise.all([actions.startCircle(), actions.startCircle()]);
+assert.equal(invoicesCreated, 6);
+assert.equal(store.state.circle.phase, 'running');
+assert.ok(store.state.hands.filter((h) => h.week === 1).every((h) => h.status === 'due' && h.invoiceId));
+assert.ok(store.state.hands.filter((h) => h.week > 1).every((h) => h.status === 'upcoming' && !h.invoiceId));
+assert.match(await actions.startCircle(), /already started/);
+gateway.createAndSendInvoice = createAndSend;
+console.log('✓ first invoices →', lastBanker('host'));
+
+// 15. A new circle runs the same way as the demo, whatever its size.
+loadDraft(cleanDraft({ name: 'Trio', handAmount: 20, startDate: '2026-11-09', members: [person('Bea Ford', { isHost: true, needBy: '2026-11-10' }), person('Cy Hall', { needBy: '2026-11-20' }), person('Di New', { isNew: true, needBy: '2026-11-10' })] }, TODAY).draft);
+assert.equal(store.state.circle.trustWeeks, 1);
+assert.notEqual(store.state.circle.drawOrder[0], 'di', 'a new member still waits');
+await actions.startCircle();
+const first = store.state.circle.drawOrder[0];
+for (const m of store.state.members) await actions.recordCash(m.id);
+const trioApproval = store.state.approvals.find((a) => a.status === 'pending');
+assert.equal(trioApproval?.memberId, first);
+assert.equal(trioApproval?.amount, 60);
+await actions.decideApproval(trioApproval!.id, true);
+await until(() => store.draw(1)!.status === 'paid', 'trio payout');
+console.log('✓ a three-person circle runs through to a payout:', store.state.circle.drawOrder.join(' → '));
+
+// The demo still comes back afterwards.
+await loadScene('demo');
+assert.equal(store.state.circle.id, 'ward4');
+assert.equal(store.state.circle.phase, 'running');
 
 console.log('\nActivity (newest first):');
 for (const a of store.state.activity.slice(0, 14)) console.log(` - [${a.kind}] ${a.text}`);

@@ -2,7 +2,7 @@
 // The same actions run underneath, so PayPal behaves exactly as it does with Claude.
 import type { Member, Message } from '../../shared/types.js';
 import * as actions from '../actions.js';
-import { drawWeekOf, findSwapOptions, weekDate } from '../domain/circle.js';
+import { drawWeekOf, explainOrder, findSwapOptions, weekDate } from '../domain/circle.js';
 import { longDay, money } from '../domain/dates.js';
 import { store } from '../store.js';
 import { say } from './templates.js';
@@ -25,6 +25,13 @@ function unpaidThisWeek(): Member[] {
 
 async function hostReply(text: string): Promise<string> {
   const t = text.toLowerCase();
+  const s = store.state;
+  if (s.circle.phase === 'draft') {
+    const why = explainOrder(s.circle, s.members, s.draws, s.swaps)
+      .map((p) => `Week ${p.week}, ${store.member(p.memberId).callName}: ${p.reason}`)
+      .join(' ');
+    return `Nothing has gone to PayPal yet. ${why} Tap Send the first invoices when it looks right.`;
+  }
   const names = mentioned(t).filter((m) => !m.isHost);
 
   if (/\bcash\b|gave me|paid me|collected/.test(t) && names.length) {
@@ -62,6 +69,9 @@ async function memberReply(m: Member, text: string): Promise<string> {
   const myWeek = drawWeekOf(c, m.id);
   const pot = money(c.handAmount * c.memberIds.length);
   const hand = store.hand(m.id, c.currentWeek);
+  if (c.phase === 'draft') {
+    return say.myDraw(m, { week: myWeek, date: longDay(weekDate(c, myWeek)), pot, handLine: '' }).trim();
+  }
   const handLine =
     hand?.status === 'paid'
       ? m.language === 'jm'

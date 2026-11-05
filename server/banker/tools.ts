@@ -201,6 +201,7 @@ const TOOLS = (): BankerTool[] => [
       const hand = store.hand(id, s.circle.currentWeek);
       if (!hand) return { ok: false, result: 'No hand this week.' };
       if (hand.status === 'paid') return { ok: true, result: 'Already paid this week.' };
+      if (hand.status === 'upcoming') return { ok: false, result: "This week's hand isn't due yet." };
       store.addMessage({
         thread: id,
         from: 'banker',

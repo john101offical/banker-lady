@@ -130,6 +130,7 @@ export async function recordCash(memberId: string, week = store.state.circle.cur
   const hand = store.hand(memberId, week);
   if (!hand) return `${m.callName} has no hand for Week ${week}.`;
   if (hand.status === 'paid') return `${m.callName}'s Week ${week} hand is already paid (${hand.method}).`;
+  if (hand.status === 'upcoming') return `${m.callName}'s Week ${week} hand isn't due yet, so there is nothing to record.`;
   if (recordingCash.has(hand.id)) return `${m.callName}'s cash hand is already being recorded.`;
   if (hand.invoiceId) {
     recordingCash.add(hand.id);
@@ -197,6 +198,7 @@ export async function sendReminder(memberId: string, text?: string, week = store
   const hand = store.hand(memberId, week);
   if (!hand) return `${m.callName} has no hand for Week ${week}.`;
   if (hand.status === 'paid') return `${m.callName} already paid Week ${week}; no reminder needed.`;
+  if (hand.status === 'upcoming') return `${m.callName}'s Week ${week} hand isn't due yet, so there is nothing to remind them about.`;
   const date = weekDate(s.circle, week);
   const message =
     text?.trim() ||
@@ -564,9 +566,34 @@ export function respondSwap(swapId: string, accept: boolean, by: 'member' | 'age
 // Week and PayPal sync
 // ---------------------------------------------------------------------------
 
+/** The host has checked the draft's order: from here on, hands are real PayPal invoices. */
+export async function startCircle(): Promise<string> {
+  const s = store.state;
+  const { circle } = s;
+  if (circle.phase !== 'draft') return `${circle.name} has already started.`;
+  circle.phase = 'running';
+  for (const h of handsFor(1)) h.status = 'due';
+  store.log('host', `${host().callName} started ${circle.name}.`);
+  await issueInvoices(1);
+  if (stale(s)) return 'The demo was reset.';
+  return announceWeek(1);
+}
+
+function announceWeek(week: number): string {
+  const { circle } = store.state;
+  const hands = handsFor(week);
+  const sent = hands.filter((h) => h.invoiceId).length;
+  const invoices =
+    sent === hands.length ? `PayPal invoices are out for all ${sent} hands` : `PayPal took ${sent} of ${hands.length} invoices, so check the notice above`;
+  const text = `Week ${week} is open. ${invoices}, and ${recipientOf(week).callName} draws ${money(pot())} on ${longDay(weekDate(circle, week))}.`;
+  store.addMessage({ thread: 'host', from: 'banker', kind: 'text', text });
+  return text;
+}
+
 export async function advanceWeek(): Promise<string> {
   const s = store.state;
   const { circle } = s;
+  if (circle.phase === 'draft') return 'Send the first invoices before opening another week.';
   const draw = store.draw(circle.currentWeek);
   if (draw && draw.status !== 'paid') {
     return `Week ${circle.currentWeek}'s draw hasn't been paid yet, so the week can't close.`;
@@ -578,10 +605,7 @@ export async function advanceWeek(): Promise<string> {
   store.log('host', `Week ${week} opened.`);
   await issueInvoices(week);
   if (stale(s)) return 'The demo was reset.';
-  const r = recipientOf(week);
-  const text = `Week ${week} is open. PayPal invoices are out for all ${circle.memberIds.length} hands, and ${r.callName} draws ${money(pot())} on ${longDay(weekDate(circle, week))}.`;
-  store.addMessage({ thread: 'host', from: 'banker', kind: 'text', text });
-  return text;
+  return announceWeek(week);
 }
 
 let refreshing = false;
@@ -620,6 +644,7 @@ export function statusFor(week = store.state.circle.currentWeek) {
   const { circle } = s;
   return {
     circle: circle.name,
+    phase: circle.phase,
     hand: money(circle.handAmount),
     draw_amount: money(pot()),
     current_week: week,

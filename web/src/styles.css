@@ -145,6 +145,188 @@ button.link {
   font-weight: 600;
 }
 
+/* ---------- Start a new circle ---------- */
+.setup {
+  width: min(1120px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 20px 22px 22px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--sheet);
+  color: var(--text);
+}
+
+.setup::backdrop {
+  background: rgb(31 47 134 / 0.28);
+}
+
+.setup-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.setup-head h2 {
+  font: 600 30px/1.1 var(--hand);
+  color: var(--ink);
+}
+
+.setup input,
+.setup select,
+.setup textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--sheet);
+  color: var(--text);
+  font: inherit;
+}
+
+.setup input[type='checkbox'],
+.setup input[type='radio'] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  accent-color: var(--ink);
+}
+
+.setup-describe {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setup textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.setup textarea::placeholder {
+  color: var(--muted);
+}
+
+.setup-small {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}
+
+.setup-actions button.primary {
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  border: 1px solid var(--ink);
+}
+
+.setup-error {
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--due-bg);
+  border: 1px solid #f0c4d2;
+  color: #7c1d3e;
+}
+
+.setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setup-notes {
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--highlight);
+}
+
+.setup-notes ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.setup-circle {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.setup-circle label,
+.setup-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.setup-circle input,
+.setup-row input,
+.setup-row select {
+  font-size: 14px;
+}
+
+.setup-people {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.8fr) minmax(0, 1.6fr) 134px 104px 38px 38px 38px 58px;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.setup-row .tick-box {
+  align-items: center;
+}
+
+.setup-row .remove {
+  font-size: 13px;
+}
+
+.setup-row:not(:first-child) .cap {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.setup-row:first-child .remove {
+  align-self: end;
+  margin-bottom: 8px;
+}
+
+.add-person {
+  align-self: start;
+}
+
+.approval.draft {
+  flex-wrap: wrap;
+}
+
+.who-text small.why-late {
+  color: var(--due);
+}
+
 /* ---------- Top bar ---------- */
 .topbar {
   grid-area: top;
@@ -236,6 +418,7 @@ button.link {
 .buttons {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 /* ---------- Notices ---------- */
@@ -1179,7 +1362,7 @@ button.link {
 /* ---------- Small screens ---------- */
 @media (max-width: 1180px) {
   .app {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       'top'
       'hand'
@@ -1198,7 +1381,44 @@ button.link {
   }
 }
 
+@media (max-width: 1000px) {
+  .setup-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    padding: 10px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .setup-row:not(:first-child) .cap {
+    position: static;
+    width: auto;
+    height: auto;
+    clip: auto;
+  }
+
+  .setup-row .tick-box {
+    flex-direction: row-reverse;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .setup-row:first-child .remove {
+    margin-bottom: 0;
+  }
+
+  .setup-row .remove {
+    justify-self: start;
+  }
+}
+
 @media (max-width: 640px) {
+  .setup {
+    padding: 16px;
+  }
+
+  .setup-circle {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .facts {
     gap: 4px 18px;
   }

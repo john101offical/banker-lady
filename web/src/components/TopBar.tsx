@@ -19,8 +19,9 @@ export function Logo() {
   );
 }
 
-export function TopBar({ snap, connected }: { snap: Snapshot; connected: boolean }) {
+export function TopBar({ snap, connected, onNewCircle }: { snap: Snapshot; connected: boolean; onNewCircle: () => void }) {
   const { circle } = snap;
+  const draft = circle.phase === 'draft';
   const members = memberMap(snap);
   const n = circle.memberIds.length;
   const recipient = members.get(circle.drawOrder[circle.currentWeek - 1]);
@@ -48,12 +49,10 @@ export function TopBar({ snap, connected }: { snap: Snapshot; connected: boolean
         </div>
         <div>
           <dt>Week</dt>
-          <dd>
-            {circle.currentWeek} of {n}
-          </dd>
+          <dd>{draft ? 'Not started' : `${circle.currentWeek} of ${n}`}</dd>
         </div>
         <div>
-          <dt>This draw</dt>
+          <dt>{draft ? 'First draw' : 'This draw'}</dt>
           <dd>
             {recipient?.callName}, {money(circle.handAmount * n)} on {longDay(weekDate(circle, circle.currentWeek))}
           </dd>
@@ -74,14 +73,17 @@ export function TopBar({ snap, connected }: { snap: Snapshot; connected: boolean
           {!connected && <span className="mode offline-dot">Reconnecting…</span>}
         </p>
         <div className="buttons">
+          <button type="button" disabled={!!busy} onClick={onNewCircle}>
+            Start a new circle
+          </button>
           <button type="button" disabled={!!busy} onClick={() => run('check', '/api/paypal/refresh')}>
             {busy === 'check' ? 'Checking…' : 'Check PayPal'}
           </button>
-          <button type="button" disabled={!!busy} onClick={() => run('next', '/api/week/advance')}>
+          <button type="button" disabled={!!busy || draft} onClick={() => run('next', '/api/week/advance')}>
             {busy === 'next' ? 'Opening…' : 'Next week'}
           </button>
           <button type="button" disabled={!!busy} onClick={() => run('reset', '/api/demo/reset')}>
-            {busy === 'reset' ? 'Resetting…' : 'Reset demo'}
+            {busy === 'reset' ? 'Resetting…' : circle.id === 'ward4' ? 'Reset demo' : 'Back to the demo'}
           </button>
         </div>
       </div>

@@ -10,7 +10,9 @@ import { addDays, localDate, memberMap, money, shortDay, weekDate } from '../uti
 /** Each member's row: a green band up to the date they need the money, and their draw on top. */
 function buildData(snap: Snapshot) {
   const { circle, members, draws } = snap;
-  const resources = circle.memberIds.map((id) => {
+  const draft = circle.phase === 'draft';
+  // A draft is about the order, so its rows read down the draws like a staircase.
+  const resources = (draft ? circle.drawOrder : circle.memberIds).map((id) => {
     const m = members.find((x) => x.id === id)!;
     return { id: m.id, name: m.callName };
   });
@@ -30,18 +32,19 @@ function buildData(snap: Snapshot) {
       status: d.status,
     };
   });
+  const earliest = addDays(circle.startDate, -7);
   const ranges = members
-    .filter((m) => m.goal.needBy)
+    .filter((m) => m.goal.needBy && m.goal.needBy > earliest)
     .map((m) => ({
       id: `need-${m.id}`,
       resourceId: m.id,
-      startDate: localDate(addDays(circle.startDate, -7)),
+      startDate: localDate(earliest),
       endDate: localDate(m.goal.needBy!),
       name: `Needs it by ${shortDay(m.goal.needBy!)}`,
       timeRangeColor: 'green',
     }));
   const now = weekDate(circle, circle.currentWeek);
-  const timeRanges = [{ id: 'this-week', name: 'This week', startDate: localDate(now) }];
+  const timeRanges = [{ id: 'this-week', name: draft ? 'First draw' : 'This week', startDate: localDate(now) }];
   const lastNeed = members.map((m) => m.goal.needBy ?? circle.startDate).sort().at(-1)!;
   const lastDraw = weekDate(circle, circle.memberIds.length);
   const end = [addDays(lastNeed, 10), addDays(lastDraw, 14)].sort().at(-1)!;
@@ -50,7 +53,7 @@ function buildData(snap: Snapshot) {
     events,
     ranges,
     timeRanges,
-    start: localDate(addDays(circle.startDate, -7)),
+    start: localDate(earliest),
     end: localDate(end),
   };
 }

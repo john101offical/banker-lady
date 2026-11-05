@@ -114,7 +114,55 @@ const options = (await member.run('find_swap_options', { member_id: 'pauline' },
 assert.ok(options.every((o) => typeof o.counterparty_language === 'string'));
 console.log('✓ tool layer keeps goals private, rejects bad dates, and gives the other member\'s language');
 
-// 4. If OpenRouter fails, the offline banker still answers.
+// 4. Start a new circle: the model fills in the form through response_format, and the server checks it.
+const { readCircleDescription } = await import('./banker/setup.js');
+const reading = {
+  name: null,
+  handAmount: 50,
+  startDate: null,
+  members: [
+    { name: 'Pauline Grant', callName: 'Miss P', savingFor: 'a land payment', needBy: '2027-01-15', isNew: false, paysCash: false, isHost: true, language: 'en' },
+    { name: 'Joyce Reid', callName: 'Joyce', savingFor: 'a new fridge', needBy: 'around Christmas', isNew: false, paysCash: true, isHost: false, language: 'jm' },
+  ],
+  notes: ['Pauline did not say when the circle starts.'],
+};
+seen.length = 0;
+script = () => answer(JSON.stringify(reading));
+const read = await readCircleDescription('Pauline and Joyce throw $50 a week.', '2026-11-05');
+const sent = seen[0].body;
+assert.equal(sent.response_format.type, 'json_schema');
+assert.equal(sent.response_format.json_schema.strict, true);
+assert.equal(sent.provider.require_parameters, true);
+assert.ok(!('temperature' in sent), 'Claude Sonnet 5.5 rejects temperature');
+assert.equal(sent.messages[1].content, 'Pauline and Joyce throw $50 a week.');
+assert.match(sent.messages[0].content, /Today is 2026-11-05/);
+// Structured outputs reject these outright, so the schema must not use them.
+const walk = (node: unknown, visit: (o: Json) => void): void => {
+  if (Array.isArray(node)) node.forEach((n) => walk(n, visit));
+  else if (node && typeof node === 'object') {
+    visit(node as Json);
+    Object.values(node).forEach((n) => walk(n, visit));
+  }
+};
+walk(sent.response_format.json_schema.schema, (o) => {
+  if (o.type === 'object') assert.equal(o.additionalProperties, false);
+  for (const banned of ['minimum', 'maximum', 'minLength', 'maxLength', 'minItems', 'maxItems', 'pattern']) assert.ok(!(banned in o), banned);
+});
+assert.equal(read.draft.handAmount, 50);
+assert.equal(read.draft.name, 'My partner');
+assert.equal(read.draft.members[1].needBy, null, 'a date the model garbled is dropped, not trusted');
+assert.equal(read.draft.members[1].paysCash, true);
+assert.deepEqual(read.notes, ['Pauline did not say when the circle starts.']);
+script = () => answer('{ "name": "cut off');
+await assert.rejects(readCircleDescription('x', '2026-11-05'), /expected form/);
+script = () => ({ message: { role: 'assistant', content: '{' }, finish_reason: 'length' });
+await assert.rejects(readCircleDescription('x', '2026-11-05'), /ran out of room/);
+script = () => answer(JSON.stringify({ ...reading, handAmount: null, members: [] }));
+const empty = await readCircleDescription('x', '2026-11-05');
+assert.ok(empty.notes.length >= 2, 'what the form still needs comes back as notes');
+console.log('✓ the circle description comes back through response_format and is checked');
+
+// 5. If OpenRouter fails, the offline banker still answers.
 script = () => ({ status: 401, error: 'No auth credentials found' });
 await post('host', 'Who still owes this week?');
 assert.ok(lastBanker('host'));

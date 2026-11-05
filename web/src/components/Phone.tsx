@@ -164,9 +164,13 @@ function suggestionsFor(snap: Snapshot, persona: string, me: Member): string[] {
   const { circle } = snap;
   const week = circle.currentWeek;
   const members = memberMap(snap);
+  if (circle.phase === 'draft') {
+    if (persona === 'host') return ['Why is the order like this?'];
+    return [me.language === 'jm' ? 'Wen mi draw?' : 'When is my draw?'];
+  }
   if (persona === 'host') {
     const out: string[] = [];
-    for (const h of snap.hands.filter((x) => x.week === week && x.status !== 'paid')) {
+    for (const h of snap.hands.filter((x) => x.week === week && x.status === 'due')) {
       const m = members.get(h.memberId)!;
       const first = m.name.split(' ')[0];
       out.push(m.paysCash ? `${first} gave me cash` : `Remind ${first}, kindly`);
@@ -185,7 +189,7 @@ function suggestionsFor(snap: Snapshot, persona: string, me: Member): string[] {
     );
   }
   out.push(me.language === 'jm' ? 'Wen mi draw?' : 'When is my draw?');
-  if (hand && hand.status !== 'paid') out.push(me.language === 'jm' ? 'How mi fi pay?' : 'How do I pay?');
+  if (hand?.status === 'due') out.push(me.language === 'jm' ? 'How mi fi pay?' : 'How do I pay?');
   return out.slice(0, 3);
 }
 

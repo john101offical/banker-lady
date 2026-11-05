@@ -1,10 +1,11 @@
 // The demo circle: six members of the Ward 4 Partner, $50 a week, one $300 draw each Monday.
 // Weeks 1 and 2 ran on Miss P's paper partner book; from Week 3 everything runs through PayPal.
-import type { Draw, Hand, Member, Message } from '../shared/types.js';
+import type { Circle, CircleDraft, Draw, Hand, Member, Message } from '../shared/types.js';
 import { issueInvoices, newRunTag } from './actions.js';
 import { config } from './config.js';
 import { planDrawOrder, weekDate } from './domain/circle.js';
 import { longDay, nowIso } from './domain/dates.js';
+import { cleanDraft, memberId } from './domain/setup.js';
 import { newId, store, type State } from './store.js';
 
 const START = '2026-11-16';
@@ -93,17 +94,128 @@ export function demoMembers(): Member[] {
   ];
 }
 
+const COLORS = ['#A0442F', '#2E7D6B', '#8A6A1F', '#3E54A3', '#6B3FA0', '#A3325E', '#2F6F8F', '#6E7A26', '#8C4A7A', '#3F7D3A', '#B0562B', '#4A5BB0'];
+
+/** The demo cast as a filled-in form: the "Start a new circle" fallback when there's no AI key. */
+export function demoDraft(today: string): CircleDraft {
+  return cleanDraft(
+    {
+      name: 'Ward 4 Partner',
+      handAmount: HAND,
+      startDate: START,
+      members: demoMembers().map((m) => ({
+        name: m.name,
+        callName: m.callName,
+        savingFor: m.goal.label,
+        needBy: m.goal.needBy,
+        isNew: m.isNew,
+        paysCash: m.paysCash,
+        isHost: m.isHost === true,
+        language: m.language,
+      })),
+    },
+    today,
+  ).draft;
+}
+
+/** A new circle in Week 1 with its order worked out, and nothing sent to PayPal. */
+export function buildDraftScene(draft: CircleDraft): State {
+  const taken = new Set<string>();
+  const members = draft.members.map((d, i): Member => {
+    const id = memberId(d.name, taken);
+    taken.add(id);
+    return {
+      id,
+      name: d.name,
+      callName: d.callName,
+      email: email(id),
+      language: d.language,
+      goal: { label: d.savingFor || 'their own goal', needBy: d.needBy },
+      isNew: d.isNew,
+      circlesCompleted: d.isNew ? 0 : 1,
+      paysCash: d.paysCash,
+      swapPolicy: 'ask',
+      isHost: d.isHost,
+      color: COLORS[i % COLORS.length],
+    };
+  });
+  const n = members.length;
+  // Half the circle at most, or a new member in a small circle could never draw.
+  const trustWeeks = Math.min(3, Math.floor(n / 2));
+  const { order } = planDrawOrder({ members, startDate: draft.startDate, frequencyDays: 7, trustWeeks });
+  const circle: Circle = {
+    id: newId('circle'),
+    phase: 'draft',
+    name: draft.name,
+    handAmount: draft.handAmount,
+    currency: 'USD',
+    startDate: draft.startDate,
+    frequencyDays: 7,
+    memberIds: members.map((m) => m.id),
+    drawOrder: order,
+    currentWeek: 1,
+    hostId: members.find((m) => m.isHost)!.id,
+    trustWeeks,
+  };
+  const hands: Hand[] = [];
+  for (let week = 1; week <= n; week++) {
+    for (const m of members) {
+      hands.push({ id: newId('hand'), week, memberId: m.id, amount: draft.handAmount, status: 'upcoming', remindersSent: 0 });
+    }
+  }
+  const draws: Draw[] = order.map((memberId, i) => ({
+    id: newId('draw'),
+    week: i + 1,
+    memberId,
+    amount: draft.handAmount * n,
+    date: weekDate(circle, i + 1),
+    status: 'upcoming',
+  }));
+  return {
+    circle,
+    members,
+    hands,
+    draws,
+    swaps: [],
+    approvals: [],
+    messages: [
+      {
+        id: newId('msg'),
+        thread: 'host',
+        from: 'banker',
+        kind: 'text',
+        createdAt: nowIso(),
+        text: `I've worked out the draw order for ${draft.name}, and nothing has gone to PayPal yet. Look it over in the book and the timeline, then tap Send the first invoices when it looks right.`,
+      },
+    ],
+    activity: [
+      {
+        id: newId('act'),
+        at: nowIso(),
+        kind: 'system',
+        text: `Worked out the draw order for ${draft.name}. No PayPal invoices have gone out.`,
+      },
+    ],
+  };
+}
+
+export function loadDraft(draft: CircleDraft) {
+  newRunTag();
+  store.load(buildDraftScene(draft));
+}
+
 const CURRENT_WEEK = 3;
 
 /** Week 3 of the circle: four hands in, Miss Joyce (cash) and Devon still to pay. */
 export function buildDemoScene(): { state: State; seededPaid: string[] } {
   const members = demoMembers();
   const { order } = planDrawOrder({ members, startDate: START, frequencyDays: 7, trustWeeks: 3 });
-  const circle = {
+  const circle: Circle = {
     id: 'ward4',
+    phase: 'running',
     name: 'Ward 4 Partner',
     handAmount: HAND,
-    currency: 'USD' as const,
+    currency: 'USD',
     startDate: START,
     frequencyDays: 7,
     memberIds: members.map((x) => x.id),

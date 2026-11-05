@@ -80,12 +80,21 @@ export function Book({ snap, persona, onPick }: { snap: Snapshot; persona: strin
   const handOf = (memberId: string, week: number) => hands.find((h) => h.memberId === memberId && h.week === week);
   const drawOf = (week: number) => draws.find((d) => d.week === week);
   const paidCount = (week: number) => hands.filter((h) => h.week === week && h.status === 'paid').length;
+  const draft = circle.phase === 'draft';
+  const isNow = (week: number) => !draft && week === circle.currentWeek;
+  const why = (memberId: string) => snap.plan.find((p) => p.memberId === memberId);
+  // A draft is about the order, so its rows read down the draws like a staircase.
+  const rows = draft ? circle.drawOrder.map((id) => members.find((m) => m.id === id)!) : members;
 
   return (
     <section className="partner-book" aria-labelledby="book-title">
       <div className="book-head">
         <h2 id="book-title">The book</h2>
-        <p>Every hand and every draw, as PayPal records them. Tap a name to open that member's phone.</p>
+        <p>
+          {draft
+            ? "The order I'd draw in, and why. Tap a name to open that member's phone."
+            : "Every hand and every draw, as PayPal records them. Tap a name to open that member's phone."}
+        </p>
       </div>
       <div className="sheet-wrap">
         <div className="sheet" role="table" aria-label="Hands and draws by week" style={{ ['--weeks' as string]: weeks.length }}>
@@ -94,13 +103,13 @@ export function Book({ snap, persona, onPick }: { snap: Snapshot; persona: strin
               Member
             </div>
             {weeks.map((w) => (
-              <div role="columnheader" key={w} className={`wk ${w === circle.currentWeek ? 'now' : ''}`}>
+              <div role="columnheader" key={w} className={`wk ${isNow(w) ? 'now' : ''}`}>
                 <span>Week {w}</span>
                 <small>{shortDay(weekDate(circle, w))}</small>
               </div>
             ))}
           </div>
-          {members.map((m) => (
+          {rows.map((m) => (
             <div
               key={m.id}
               role="row"
@@ -115,10 +124,14 @@ export function Book({ snap, persona, onPick }: { snap: Snapshot; persona: strin
                       {m.isHost && <span className="tag">host</span>}
                       {m.isNew && <span className="tag new">new</span>}
                     </span>
-                    <small>
-                      For {m.goal.label}
-                      {m.goal.needBy ? `, by ${shortDay(m.goal.needBy)}` : ', no fixed date'}
-                    </small>
+                    {draft ? (
+                      <small className={why(m.id)?.onTime === false ? 'why-late' : ''}>{why(m.id)?.reason}</small>
+                    ) : (
+                      <small>
+                        For {m.goal.label}
+                        {m.goal.needBy ? `, by ${shortDay(m.goal.needBy)}` : ', no fixed date'}
+                      </small>
+                    )}
                   </span>
                 </button>
               </div>
@@ -126,8 +139,8 @@ export function Book({ snap, persona, onPick }: { snap: Snapshot; persona: strin
                 const draw = drawOf(w);
                 const isDraw = circle.drawOrder[w - 1] === m.id;
                 return (
-                  <div role="cell" key={w} className={`cell ${w === circle.currentWeek ? 'now' : ''}`}>
-                    <HandMark hand={handOf(m.id, w)} member={m} canAct={persona === 'host' && w === circle.currentWeek} />
+                  <div role="cell" key={w} className={`cell ${isNow(w) ? 'now' : ''}`}>
+                    <HandMark hand={handOf(m.id, w)} member={m} canAct={persona === 'host' && isNow(w)} />
                     {isDraw && draw && <Stamp draw={draw} memberId={m.id} />}
                   </div>
                 );
@@ -139,8 +152,8 @@ export function Book({ snap, persona, onPick }: { snap: Snapshot; persona: strin
               Hands in
             </div>
             {weeks.map((w) => (
-              <div role="cell" key={w} className={`wk ${w === circle.currentWeek ? 'now' : ''}`}>
-                {w <= circle.currentWeek ? `${paidCount(w)} of ${members.length}` : ''}
+              <div role="cell" key={w} className={`wk ${isNow(w) ? 'now' : ''}`}>
+                {!draft && w <= circle.currentWeek ? `${paidCount(w)} of ${members.length}` : ''}
               </div>
             ))}
           </div>

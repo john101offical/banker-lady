@@ -137,8 +137,12 @@ export interface ActivityItem {
   ref?: string;
 }
 
+export type CirclePhase = 'draft' | 'running';
+
 export interface Circle {
   id: string;
+  /** A draft shows its order for checking; no PayPal invoice exists until it runs. */
+  phase: CirclePhase;
   name: string;
   handAmount: number;
   currency: 'USD';
@@ -152,6 +156,33 @@ export interface Circle {
   hostId: string;
   /** New members draw only after this many weeks. */
   trustWeeks: number;
+}
+
+/** One person in a circle being set up, from the host's form or the model's reading. */
+export interface DraftMember {
+  name: string;
+  callName: string;
+  savingFor: string;
+  needBy: string | null;
+  isNew: boolean;
+  paysCash: boolean;
+  isHost: boolean;
+  language: LanguageCode;
+}
+
+export interface CircleDraft {
+  name: string;
+  handAmount: number;
+  /** ISO date of the first draw. */
+  startDate: string;
+  members: DraftMember[];
+}
+
+/** What the model made of the host's description. */
+export interface SetupReading {
+  draft: CircleDraft;
+  /** Things the host should check. */
+  notes: string[];
 }
 
 export interface PlanReason {

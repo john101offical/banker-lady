@@ -39,6 +39,12 @@ Walk through it in about two minutes:
 
 **Reset demo** puts everything back.
 
+## Start a new circle
+
+Tap **Start a new circle** and describe it in your own words: names, the hand, what each person is saving for and by when, who is new, and who pays cash. The model fills in a form for you to check. Without an AI key, the form opens with the demo cast.
+
+Banker Lady then works out the order and shows it in the book and the timeline with a reason for each draw. No PayPal invoice exists until you tap **Send the first invoices**.
+
 ## How PayPal is used
 
 | What | PayPal API |

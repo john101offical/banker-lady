@@ -5,9 +5,11 @@ import { onApiError, post, useSnapshot } from './api';
 import { Activity } from './components/Activity';
 import { ApprovalBanner } from './components/ApprovalBanner';
 import { Book } from './components/Book';
+import { DraftBanner } from './components/DraftBanner';
 import { Phone } from './components/Phone';
 import { PersonaPicker } from './components/PersonaPicker';
 import { Risk } from './components/Risk';
+import { SetupDialog } from './components/SetupDialog';
 import { TopBar } from './components/TopBar';
 
 // Bryntum and AG Grid are large, so they load after the book and the phone are on screen.
@@ -49,6 +51,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('timeline');
   const [toast, setToast] = useState<string | null>(null);
   const [seen, setSeen] = useState<Record<string, number>>({});
+  const [setup, setSetup] = useState<'new' | 'edit' | null>(null);
 
   useEffect(() => onApiError((t) => setToast(t)), []);
   useEffect(() => {
@@ -72,11 +75,15 @@ export default function App() {
     return u;
   }, [counts, seen, persona]);
 
+  // A different circle has different people: go back to the host, with everything so far marked read.
+  const circleId = snap?.circle.id;
   useEffect(() => {
-    // The first snapshot marks everything as read, so only new messages raise a dot.
-    if (snap && Object.keys(seen).length === 0) setSeen({ ...counts });
+    if (!circleId) return;
+    setPersona('host');
+    setTab('timeline');
+    setSeen({ ...counts });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snap === null]);
+  }, [circleId]);
 
   if (!snap) {
     return (
@@ -88,7 +95,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <TopBar snap={snap} connected={connected} />
+      <TopBar snap={snap} connected={connected} onNewCircle={() => setSetup('new')} />
       <main className="desk">
         {snap.notice && (
           <div className={`notice ${snap.notice.level}`} role="alert">
@@ -98,6 +105,7 @@ export default function App() {
             </button>
           </div>
         )}
+        {snap.circle.phase === 'draft' && <DraftBanner snap={snap} onEdit={() => setSetup('edit')} />}
         <ApprovalBanner snap={snap} />
         <Book snap={snap} persona={persona} onPick={setPersona} />
         <section className="folder" aria-label="Circle details">
@@ -119,8 +127,8 @@ export default function App() {
           </div>
           <div className="folder-body" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
             <Suspense fallback={<p className="panel-lead">Loading…</p>}>
-              {tab === 'timeline' && <Timeline snap={snap} />}
-              {tab === 'ledger' && <Ledger snap={snap} />}
+              {tab === 'timeline' && <Timeline key={snap.circle.id} snap={snap} />}
+              {tab === 'ledger' && <Ledger key={snap.circle.id} snap={snap} />}
             </Suspense>
             {tab === 'activity' && <Activity snap={snap} />}
             {tab === 'risk' && <Risk snap={snap} />}
@@ -131,6 +139,7 @@ export default function App() {
         <PersonaPicker snap={snap} persona={persona} onPick={setPersona} unread={unread} />
         <Phone snap={snap} persona={persona} />
       </aside>
+      {setup && <SetupDialog mode={setup} snap={snap} onClose={() => setSetup(null)} />}
       {toast && (
         <div className="toast" role="alert">
           <p>{toast}</p>

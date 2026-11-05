@@ -4,9 +4,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as actions from './actions.js';
 import { bankerRespond } from './banker/agent.js';
-import { aiModel, aiProvider, config, hasPayPal } from './config.js';
+import { readCircleDescription } from './banker/setup.js';
+import { aiModel, aiProvider, config, hasPayPal, hasOpenRouter } from './config.js';
+import { cleanDraft } from './domain/setup.js';
 import { gateway } from './paypal/index.js';
-import { loadScene } from './seed.js';
+import { demoDraft, loadDraft, loadScene } from './seed.js';
 import { store } from './store.js';
 
 store.mode = {
@@ -122,6 +124,44 @@ app.post(
 app.post(
   '/api/paypal/refresh',
   route(async () => ({ result: await actions.refreshFromPayPal() })),
+);
+
+const utcToday = () => new Date().toISOString().slice(0, 10);
+
+// Start a new circle: the form's starting point, the model's reading, the order, then the invoices.
+app.get('/api/setup/template', (_req, res) => {
+  res.json({ draft: demoDraft(utcToday()), canRead: hasOpenRouter });
+});
+
+app.post(
+  '/api/setup/read',
+  route(async (req) => {
+    const description = String(req.body?.description ?? '').trim().slice(0, 4000);
+    if (!description) throw Object.assign(new Error('Describe your circle first.'), { status: 400 });
+    if (!hasOpenRouter) throw Object.assign(new Error('No AI key is set, so use the form.'), { status: 503 });
+    try {
+      return await readCircleDescription(description, utcToday());
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      store.log('system', `Couldn't read the circle description (${why.slice(0, 160)}).`);
+      throw Object.assign(new Error('The AI model is unavailable right now.'), { status: 503 });
+    }
+  }),
+);
+
+app.post(
+  '/api/setup/plan',
+  route((req) => {
+    const { draft, problems } = cleanDraft(req.body?.draft, utcToday());
+    if (problems.length) throw Object.assign(new Error(problems.join(' ')), { status: 400 });
+    loadDraft(draft);
+    return { ok: true };
+  }),
+);
+
+app.post(
+  '/api/setup/start',
+  route(async () => ({ result: await actions.startCircle() })),
 );
 
 app.post(
