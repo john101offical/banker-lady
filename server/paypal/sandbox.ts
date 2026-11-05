@@ -14,6 +14,8 @@ import {
 } from './gateway.js';
 
 const SANDBOX_BASE = 'https://api-m.sandbox.paypal.com';
+/** A hung call must not stop the server from starting or leave a button spinning. */
+const TIMEOUT_MS = 20_000;
 
 type Json = Record<string, any>;
 
@@ -27,9 +29,17 @@ export class SandboxGateway implements PaymentsGateway {
     private readonly base = SANDBOX_BASE,
   ) {}
 
+  private async send(path: string, init: RequestInit): Promise<Response> {
+    try {
+      return await fetch(`${this.base}${path}`, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    } catch (e) {
+      throw new PayPalError(`Couldn't reach PayPal for ${path}: ${e instanceof Error ? e.message : String(e)}`, 503);
+    }
+  }
+
   private async token(): Promise<string> {
     if (this.cached && this.cached.expiresAt > Date.now() + 60_000) return this.cached.token;
-    const res = await fetch(`${this.base}/v1/oauth2/token`, {
+    const res = await this.send('/v1/oauth2/token', {
       method: 'POST',
       headers: {
         Authorization: `Basic ${Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64')}`,
@@ -55,7 +65,7 @@ export class SandboxGateway implements PaymentsGateway {
     body?: unknown,
     headers: Record<string, string> = {},
   ): Promise<T> {
-    const res = await fetch(`${this.base}${path}`, {
+    const res = await this.send(path, {
       method,
       headers: {
         Authorization: `Bearer ${await this.token()}`,

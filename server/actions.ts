@@ -4,6 +4,7 @@ import type { Approval, Draw, Hand, Member, Swap } from '../shared/types.js';
 import { say } from './banker/templates.js';
 import { drawWeekOf, findSwapOptions, weekDate } from './domain/circle.js';
 import { daysBetween, longDay, money, nowIso, shortDay } from './domain/dates.js';
+import type { PayoutStatus } from './paypal/gateway.js';
 import { gateway, PayPalError } from './paypal/index.js';
 import { newId, store, type State } from './store.js';
 
@@ -16,6 +17,9 @@ export function newRunTag() {
 const today = () => new Date().toISOString().slice(0, 10);
 const host = (): Member => store.member(store.state.circle.hostId);
 const pot = () => store.state.circle.handAmount * store.state.circle.memberIds.length;
+
+/** Hands whose cash is being recorded right now, so the PayPal poll doesn't also report them as paid. */
+const recordingCash = new Set<string>();
 
 function errorText(e: unknown): string {
   if (e instanceof PayPalError) return e.message;
@@ -126,14 +130,20 @@ export async function recordCash(memberId: string, week = store.state.circle.cur
   const hand = store.hand(memberId, week);
   if (!hand) return `${m.callName} has no hand for Week ${week}.`;
   if (hand.status === 'paid') return `${m.callName}'s Week ${week} hand is already paid (${hand.method}).`;
+  if (recordingCash.has(hand.id)) return `${m.callName}'s cash hand is already being recorded.`;
   if (hand.invoiceId) {
-    await gateway.recordPayment(hand.invoiceId, {
-      method: 'CASH',
-      amount: hand.amount,
-      currency: s.circle.currency,
-      date: today(),
-      note: `Cash handed to ${host().callName}`,
-    });
+    recordingCash.add(hand.id);
+    try {
+      await gateway.recordPayment(hand.invoiceId, {
+        method: 'CASH',
+        amount: hand.amount,
+        currency: s.circle.currency,
+        date: today(),
+        note: `Cash handed to ${host().callName}`,
+      });
+    } finally {
+      recordingCash.delete(hand.id);
+    }
     if (stale(s)) return 'The demo was reset.';
   }
   hand.status = 'paid';
@@ -250,7 +260,7 @@ export function requestPayout(week = store.state.circle.currentWeek, note?: stri
   const m = store.member(draw.memberId);
   if (draw.status === 'paid') return `${m.callName}'s Week ${week} draw is already paid.`;
   if (draw.status === 'processing') return `${m.callName}'s draw is already on its way through PayPal.`;
-  if (draw.status !== 'ready' && draw.status !== 'awaiting_approval') {
+  if (draw.status !== 'ready' && draw.status !== 'awaiting_approval' && draw.status !== 'failed') {
     return `Not yet: ${progressLine(week)}`;
   }
   const existing = store.state.approvals.find((a) => a.week === week && a.status === 'pending');
@@ -295,6 +305,7 @@ export async function decideApproval(approvalId: string, approve: boolean): Prom
   }
   approval.status = 'approved';
   draw.status = 'processing';
+  draw.failureReason = undefined;
   store.log('host', `${host().callName} approved ${m.callName}'s ${money(draw.amount)} draw.`);
   try {
     const res = await gateway.createPayout({
@@ -337,23 +348,42 @@ async function watchPayout(draw: Draw, s: State) {
     try {
       const st = await gateway.getPayoutStatus(draw.payoutBatchId);
       if (stale(s)) return;
-      if (st.state === 'success') return settleDraw(draw, st.transactionId, st.payoutItemId);
-      if (st.state === 'failed') {
-        draw.status = 'failed';
-        draw.failureReason = st.reason ?? st.itemStatus ?? st.batchStatus;
-        store.setNotice('error', `The payout to ${store.member(draw.memberId).callName} failed: ${draw.failureReason}`);
-        return;
-      }
+      applyPayoutStatus(draw, st);
     } catch (e) {
       store.log('system', `Couldn't check payout ${draw.payoutBatchId}: ${errorText(e)}`);
     }
   }
 }
 
+/** PayPal's word on a payout in progress, from the watcher or the regular poll. */
+function applyPayoutStatus(draw: Draw, st: PayoutStatus) {
+  if (draw.status !== 'processing') return;
+  const name = store.member(draw.memberId).callName;
+  if (st.state === 'success') {
+    settleDraw(draw, st.transactionId, st.payoutItemId);
+  } else if (st.state === 'failed') {
+    draw.status = 'failed';
+    draw.failureReason = st.reason ?? st.itemStatus ?? st.batchStatus;
+    store.setNotice('error', `The payout to ${name} failed: ${draw.failureReason}`);
+    store.addMessage({
+      thread: 'host',
+      from: 'banker',
+      kind: 'text',
+      text: `PayPal couldn't pay ${name}'s draw: ${draw.failureReason}. Tell me when to try again, and I'll ask for your approval.`,
+    });
+  } else if (st.reason && draw.failureReason !== st.reason) {
+    // Still pending, but PayPal says why (nobody has claimed it yet, for example). Tell the host once.
+    draw.failureReason = st.reason;
+    store.setNotice('info', `PayPal is holding ${name}'s payout: ${st.reason}`);
+  }
+}
+
 function settleDraw(draw: Draw, transactionId?: string, payoutItemId?: string) {
+  if (draw.status === 'paid') return;
   const m = store.member(draw.memberId);
   draw.status = 'paid';
   draw.paidAt = nowIso();
+  draw.failureReason = undefined;
   draw.transactionId = transactionId;
   draw.payoutItemId = payoutItemId;
   store.log('paypal', `${money(draw.amount)} reached ${m.callName}'s PayPal${transactionId ? ` (transaction ${transactionId})` : ''}.`, transactionId);
@@ -561,10 +591,10 @@ export async function refreshFromPayPal(): Promise<string> {
   const s = store.state;
   let paid = 0;
   try {
-    for (const hand of s.hands.filter((h) => h.status === 'due' && h.invoiceId)) {
+    for (const hand of s.hands.filter((h) => h.status === 'due' && h.invoiceId && !recordingCash.has(h.id))) {
       const st = await gateway.getInvoiceStatus(hand.invoiceId!);
       if (stale(s)) return 'The demo was reset.';
-      if (st.state === 'paid') {
+      if (st.state === 'paid' && !recordingCash.has(hand.id)) {
         markHandPaid(hand, st.method === 'cash' ? 'cash' : 'paypal');
         paid += 1;
       }
@@ -572,7 +602,7 @@ export async function refreshFromPayPal(): Promise<string> {
     for (const draw of s.draws.filter((d) => d.status === 'processing' && d.payoutBatchId)) {
       const st = await gateway.getPayoutStatus(draw.payoutBatchId!);
       if (stale(s)) return 'The demo was reset.';
-      if (st.state === 'success') settleDraw(draw, st.transactionId, st.payoutItemId);
+      applyPayoutStatus(draw, st);
     }
     return paid ? `PayPal shows ${paid} new payment${paid === 1 ? '' : 's'}.` : 'PayPal is up to date.';
   } catch (e) {

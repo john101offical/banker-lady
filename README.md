@@ -94,9 +94,11 @@ Copy `.env.example` to `.env` and fill it in:
 
 Sandbox checklist:
 
-- In the sandbox app's settings, make sure **Invoicing** and **Payouts** are enabled.
+- In the sandbox app's settings, make sure **Invoicing** and **Payouts** are enabled. A newly ticked feature can take a few minutes to reach your tokens; until then invoice calls return `403 NOT_AUTHORIZED`.
+- `SANDBOX_BUYER_EMAIL` must be the sandbox **personal** account (`sb-...@personal.example.com`), not the business account that owns the app and not a real email. A payout to an address with no sandbox account stays `UNCLAIMED` and never reaches `SUCCESS`.
 - The sandbox business account (the banker) needs a balance of at least $2,000 so payouts don't fail.
 - To pay an invoice as a member, open **Pay with PayPal** and log in with the sandbox personal account.
+- Restart the server after changing `.env`. Each start and each **Reset demo** creates a new set of invoices in the sandbox.
 
 ### Deploy on Render
 

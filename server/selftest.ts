@@ -9,6 +9,7 @@ const { buildDemoScene, loadScene } = await import('./seed.js');
 const actions = await import('./actions.js');
 const { bankerRespond } = await import('./banker/agent.js');
 const { store } = await import('./store.js');
+const { gateway } = await import('./paypal/index.js');
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(check: () => boolean, label: string, ms = 8000) {
@@ -79,6 +80,44 @@ console.log('✓ plan', snap.plan.map((p) => `W${p.week} ${p.memberId}: ${p.reas
 // 9. Next week opens with new invoices.
 console.log('✓ advance →', await actions.advanceWeek());
 assert.equal(store.state.circle.currentWeek, 4);
+
+// 10. PayPal holds a payout, then fails it: the host is told each time and can ask again.
+await loadScene('demo');
+await actions.recordCash('joyce');
+await actions.simulatePayPalPayment(store.hand('devon', W)!.id);
+const settled = gateway.getPayoutStatus.bind(gateway);
+const held = 'The receiver has no PayPal account for that email yet.';
+gateway.getPayoutStatus = async (batchId) => ({ batchId, state: 'pending', batchStatus: 'SUCCESS', itemStatus: 'UNCLAIMED', reason: held });
+await actions.decideApproval(approvalFor('kezia')!.id, true);
+await until(() => store.notice?.text.includes(held) ?? false, 'held payout notice');
+assert.equal(store.draw(W)!.status, 'processing');
+gateway.getPayoutStatus = async (batchId) => ({ batchId, state: 'failed', batchStatus: 'SUCCESS', itemStatus: 'FAILED', reason: 'Receiver blocked' });
+await until(() => store.draw(W)!.status === 'failed', 'failed payout');
+assert.match(store.notice?.text ?? '', /Receiver blocked/);
+gateway.getPayoutStatus = settled;
+actions.requestPayout();
+await actions.decideApproval(approvalFor('kezia')!.id, true);
+await until(() => store.draw(W)!.status === 'paid', 'retried payout to settle');
+assert.equal(store.draw(W)!.failureReason, undefined);
+console.log('✓ held and failed payouts are reported; the retry settles');
+
+// 11. The PayPal poll landing mid-cash doesn't report the hand twice.
+await loadScene('demo');
+const thanks = () => store.state.messages.filter((m) => m.thread === 'joyce' && m.from === 'banker' && /cash|PayPal/.test(m.text)).length;
+const before = thanks();
+// PayPal has marked the invoice paid, but its answer hasn't reached us yet: that's when the poll could double-report.
+const recordPayment = gateway.recordPayment.bind(gateway);
+gateway.recordPayment = async (id, payment) => {
+  await recordPayment(id, payment);
+  await wait(300);
+};
+const cash = actions.recordCash('joyce');
+await wait(500);
+await actions.refreshFromPayPal();
+await cash;
+gateway.recordPayment = recordPayment;
+assert.equal(thanks(), before + 1);
+console.log('✓ cash recorded once when the poll overlaps it');
 
 console.log('\nActivity (newest first):');
 for (const a of store.state.activity.slice(0, 14)) console.log(` - [${a.kind}] ${a.text}`);
