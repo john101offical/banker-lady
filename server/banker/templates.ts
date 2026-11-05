@@ -50,12 +50,21 @@ export const say = {
       needBy: string | null;
     },
   ): string {
-    const keep =
-      o.needBy && o.spareDays !== null
-        ? jm(c)
-          ? `Yuh still get yuh money ${o.spareDays} days before ${o.needBy}.`
-          : `You'd still have your money ${o.spareDays} days before your ${o.needBy} date.`
-        : '';
+    const has = o.needBy && o.spareDays !== null;
+    // The app writes this itself, so it must speak every language the banker can.
+    if (c.language === 'es') {
+      const keep = has ? `Aún tendrías tu dinero ${o.spareDays} días antes del ${o.needBy}.` : '';
+      return `${c.callName}, ${o.requesterName} tiene una emergencia familiar y pidió recibir su turno antes. ¿Cambiarías tu turno de la semana ${o.week} (${o.date}) por el de la semana ${o.newWeek} (${o.newDate})? ${keep} Nada cambia a menos que digas que sí.`;
+    }
+    if (c.language === 'ht') {
+      const keep = has ? `Ou t ap toujou gen lajan ou ${o.spareDays} jou anvan ${o.needBy}.` : '';
+      return `${c.callName}, ${o.requesterName} gen yon ijans fanmi e li mande pou l resevwa tou pa l pi bonè. Èske ou ta dakò chanje tou pa w semèn ${o.week} (${o.date}) pou semèn ${o.newWeek} (${o.newDate})? ${keep} Anyen pa chanje si ou pa di wi.`;
+    }
+    const keep = has
+      ? jm(c)
+        ? `Yuh still get yuh money ${o.spareDays} days before ${o.needBy}.`
+        : `You'd still have your money ${o.spareDays} days before your ${o.needBy} date.`
+      : '';
     return jm(c)
       ? `${c.callName}, ${o.requesterName} have ${o.reason} an ask fi draw early. Yuh woulda swap yuh Week ${o.week} draw (${o.date}) fi Week ${o.newWeek} (${o.newDate})? ${keep} Nutten change unless yuh seh yes.`
       : `${c.callName}, ${o.requesterName} has ${o.reason} and asked to draw early. Would you swap your Week ${o.week} draw (${o.date}) for Week ${o.newWeek} (${o.newDate})? ${keep} Nothing changes unless you say yes.`;

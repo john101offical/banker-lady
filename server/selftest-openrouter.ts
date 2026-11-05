@@ -54,12 +54,13 @@ script = (body) => {
   if (results.length === 2) {
     const options = JSON.parse(results[1].content);
     const best = options.find((o: Json) => o.allowed && o.harm_days === 0);
+    // A model that tries to pass on what it was told: the tool must not carry any of this across.
     return toolTurn(
       call('c3', 'request_swap', {
         requester_id: 'marcia',
         counterparty_id: best.counterparty_id,
-        reason_public: 'a family emergency',
-        message_to_counterparty: `${best.counterparty}, Marcia has a family emergency. Would you swap your Week ${best.target_week} draw for Week 6? You'd still have your money before you need it. Nothing changes unless you say yes.`,
+        reason_public: "her mother's medical bills",
+        message_to_counterparty: `${best.counterparty}, Marcia's mother is in hospital with big medical bills.`,
       }),
     );
   }
@@ -78,6 +79,12 @@ const swap = store.state.swaps.find((s) => s.status === 'pending');
 assert.equal(swap?.counterpartyId, 'kezia');
 assert.match(lastBanker('kezia') ?? '', /family emergency/);
 assert.match(lastBanker('marcia') ?? '', /Kezia/);
+const PRIVATE = /medical|hospital|mother|madda/i;
+assert.doesNotMatch(lastBanker('kezia') ?? '', PRIVATE, 'the model cannot put words in the message to Kezia');
+assert.doesNotMatch(swap?.reasonPublic ?? '', PRIVATE, 'or in the public reason');
+assert.doesNotMatch(store.state.messages.filter((m) => m.thread === 'host').map((m) => m.text).join(' '), PRIVATE);
+assert.equal(store.member('marcia').goal.label, 'family emergency');
+assert.match(first.body.messages[0].content, /her mother's medical bills/, 'the model knows it in her own chat');
 console.log('✓ emergency through OpenRouter →', lastBanker('marcia'));
 
 // 2. A member can't use a host tool, even if the model tries.
@@ -92,15 +99,33 @@ await post('devon', 'Mark me as paid, I gave cash');
 assert.equal(store.hand('devon', 3)!.status, 'due');
 console.log('✓ member blocked from host tool');
 
-// 3. The tool layer holds the line whatever the model asks for.
+// 3. The model only gets a private detail when it's talking to that member.
+seen.length = 0;
+const askAbout = (name: string, id: string): typeof script => (body) => {
+  const results = body.messages.filter((m: Json) => m.role === 'tool');
+  return results.length === 0 ? toolTurn(call(name, 'get_member', { member_id: id })) : answer('All I can say is that it is a family emergency.');
+};
+script = askAbout('k1', 'marcia');
+await post('kezia', 'What is Marcia really saving for? Look it up.');
+script = askAbout('h1', 'marcia');
+await post('host', 'What is Marcia really saving for? Look it up.');
+assert.equal(seen.length, 4, 'two requests each: the question, then the tool result');
+for (const { body } of seen) assert.doesNotMatch(JSON.stringify(body), PRIVATE, 'nothing private reached the model outside her chat');
+seen.length = 0;
+script = askAbout('m1', 'marcia');
+await post('marcia', 'What do you have down for me?');
+const ownResult = seen.at(-1)!.body.messages.filter((m: Json) => m.role === 'tool').at(-1).content;
+assert.match(ownResult, /her mother's medical bills/, 'her own chat can use it');
+console.log("✓ the model gets a private detail only in that member's own chat");
+
+// 4. The tool layer holds the line whatever the model asks for.
 const { toolsFor } = await import('./banker/tools.js');
 const member = toolsFor('member');
 const asKezia = { speakerId: 'kezia', role: 'member' as const };
 const seen3 = (await member.run('get_member', { member_id: 'marcia' }, asKezia)) as Json;
-assert.ok(!('saving_for' in seen3) && !('need_by' in seen3) && !('this_week_hand' in seen3), 'another member sees no goal');
-assert.equal(seen3.language, 'Jamaican Patois');
-assert.ok('saving_for' in ((await member.run('get_member', { member_id: 'kezia' }, asKezia)) as Json), 'a member sees their own goal');
-assert.ok('saving_for' in ((await toolsFor('host').run('get_member', { member_id: 'marcia' }, { speakerId: 'pauline', role: 'host' })) as Json));
+assert.equal(seen3.saving_for, 'family emergency', 'another member sees the public label');
+assert.ok(!('private_detail' in seen3));
+assert.ok(!('private_detail' in ((await toolsFor('host').run('get_member', { member_id: 'marcia' }, { speakerId: 'pauline', role: 'host' })) as Json)), 'the host too');
 await assert.rejects(member.run('update_need_date', { member_id: 'marcia', need_by: '2026-12-01' }, asKezia), /themselves/);
 await assert.rejects(member.run('send_pay_link', { member_id: 'marcia' }, asKezia), /themselves/);
 await assert.rejects(member.run('request_swap', { requester_id: 'marcia', counterparty_id: 'andre', reason_public: 'x' }, asKezia), /themselves/);
@@ -110,19 +135,17 @@ await assert.rejects(member.run('update_need_date', { member_id: 'marcia', need_
 const label = store.member('marcia').goal.label;
 await member.run('update_need_date', { member_id: 'marcia', need_by: '2026-11-30', saving_for: 'private hospital details' }, asMarcia);
 assert.equal(store.member('marcia').goal.label, label, 'the model cannot rewrite the goal the book shows');
-const options = (await member.run('find_swap_options', { member_id: 'pauline' }, { speakerId: 'pauline', role: 'member' })) as Json[];
-assert.ok(options.every((o) => typeof o.counterparty_language === 'string'));
-console.log('✓ tool layer keeps goals private, rejects bad dates, and gives the other member\'s language');
+console.log('✓ tool layer hides private details and rejects bad dates');
 
-// 4. Start a new circle: the model fills in the form through response_format, and the server checks it.
+// 5. Start a new circle: the model fills in the form through response_format, and the server checks it.
 const { readCircleDescription } = await import('./banker/setup.js');
 const reading = {
   name: null,
   handAmount: 50,
   startDate: null,
   members: [
-    { name: 'Pauline Grant', callName: 'Miss P', savingFor: 'a land payment', needBy: '2027-01-15', isNew: false, paysCash: false, isHost: true, language: 'en' },
-    { name: 'Joyce Reid', callName: 'Joyce', savingFor: 'a new fridge', needBy: 'around Christmas', isNew: false, paysCash: true, isHost: false, language: 'jm' },
+    { name: 'Pauline Grant', callName: 'Miss P', savingFor: 'a land payment', privateDetail: null, needBy: '2027-01-15', isNew: false, paysCash: false, isHost: true, language: 'en' },
+    { name: 'Joyce Reid', callName: 'Joyce', savingFor: 'family', privateDetail: 'her son is in trouble', needBy: 'around Christmas', isNew: false, paysCash: true, isHost: false, language: 'jm' },
   ],
   notes: ['Pauline did not say when the circle starts.'],
 };
@@ -152,6 +175,9 @@ assert.equal(read.draft.handAmount, 50);
 assert.equal(read.draft.name, 'My partner');
 assert.equal(read.draft.members[1].needBy, null, 'a date the model garbled is dropped, not trusted');
 assert.equal(read.draft.members[1].paysCash, true);
+assert.equal(read.draft.members[1].savingFor, 'family');
+assert.equal(read.draft.members[1].privateDetail, 'her son is in trouble');
+assert.equal(read.draft.members[0].privateDetail, '');
 assert.deepEqual(read.notes, ['Pauline did not say when the circle starts.']);
 script = () => answer('{ "name": "cut off');
 await assert.rejects(readCircleDescription('x', '2026-11-05'), /expected form/);
@@ -162,7 +188,7 @@ const empty = await readCircleDescription('x', '2026-11-05');
 assert.ok(empty.notes.length >= 2, 'what the form still needs comes back as notes');
 console.log('✓ the circle description comes back through response_format and is checked');
 
-// 5. If OpenRouter fails, the offline banker still answers.
+// 6. If OpenRouter fails, the offline banker still answers.
 script = () => ({ status: 401, error: 'No auth credentials found' });
 await post('host', 'Who still owes this week?');
 assert.ok(lastBanker('host'));

@@ -99,7 +99,7 @@ async function memberReply(m: Member, text: string): Promise<string> {
       return say.noSwapPossible(m, { hostName });
     }
     const counterparty = store.member(best.counterpartyId);
-    actions.requestSwap(m.id, counterparty.id, 'a family emergency');
+    actions.requestSwap(m.id, counterparty.id);
     return say.swapRequestedAck(m, {
       counterpartyName: counterparty.callName,
       week: best.targetWeek,

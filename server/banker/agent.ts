@@ -1,12 +1,12 @@
 // Banker Lady's brain: a model with tools (through OpenRouter or the Anthropic API),
 // falling back to offline rules when no key is set.
 import Anthropic from '@anthropic-ai/sdk';
-import type { Member, Message } from '../../shared/types.js';
+import type { Message } from '../../shared/types.js';
 import { statusFor } from '../actions.js';
 import { aiProvider, config, hasClaude } from '../config.js';
 import { explainOrder, weekDate } from '../domain/circle.js';
 import { longDay } from '../domain/dates.js';
-import { store } from '../store.js';
+import { store, type ServerMember } from '../store.js';
 import { offlineReply } from './offline.js';
 import { openRouterReply } from './openrouter.js';
 import { toolsFor, type Role } from './tools.js';
@@ -21,14 +21,16 @@ const LANGUAGE: Record<string, string> = {
   ht: 'Write in warm, simple Haitian Creole.',
 };
 
-function systemPrompt(role: Role, speaker: Member): string {
+function systemPrompt(role: Role, speaker: ServerMember): string {
   const s = store.state;
   const c = s.circle;
   const n = c.memberIds.length;
   const who =
     role === 'host'
       ? `You are talking with ${speaker.name} ("${speaker.callName}"), who started this circle and is its host. The host approves every payout, records cash hands, and can ask you to remind members.`
-      : `You are talking with ${speaker.name} ("${speaker.callName}"), a member, in their private chat. Their language code is "${speaker.language}". ${LANGUAGE[speaker.language] ?? LANGUAGE.en}`;
+      : `You are talking with ${speaker.name} ("${speaker.callName}"), a member, in their private chat. Their language code is "${speaker.language}". ${LANGUAGE[speaker.language] ?? LANGUAGE.en}${
+          speaker.privateDetail ? ` What they are really saving for, which only they and you know: ${speaker.privateDetail}.` : ''
+        }`;
   return [
     `You are Banker Lady, the AI banker for "${c.name}", a partner: a rotating savings circle (also called susu, tanda or committee). ${n} members each throw a hand of $${c.handAmount} every week, and each week one member takes the whole draw of $${c.handAmount * n}. Real money moves through PayPal: every hand is a PayPal invoice (or cash recorded on that invoice), and every draw is paid with PayPal Payouts.`,
     who,
@@ -49,8 +51,8 @@ function systemPrompt(role: Role, speaker: Member): string {
 - Facts come from tools. Never invent amounts, dates or statuses.
 - The circle changes between messages: hands come in, draws swap. An earlier message that no longer matches was true when you wrote it, so give the current facts without apologising or correcting yourself.
 - You never move money yourself. Hands are paid by members in PayPal, or recorded as cash only when the host says so. Draws are paid only after the host approves in the app.
-- Nobody's draw week changes without their consent. For an emergency: update_need_date for the requester, then find_swap_options, choose the earliest option with allowed=true and harm_days=0, and request_swap with a kind message in that member's counterparty_language, even when it differs from the language of this chat. If no option is harmless, say so and suggest asking the host.
-- Keep private details private. Other members learn only a general reason, such as "a family emergency".
+- Nobody's draw week changes without their consent. For an emergency: update_need_date for the requester, then find_swap_options, choose the earliest option with allowed=true and harm_days=0, and request_swap. The app writes to the other member itself. If no option is harmless, say so and suggest asking the host.
+- Keep private details private. Other members and the host learn only "a family emergency". Goal labels from tools are public; a private detail is for this chat alone.
 - When someone is late, remind kindly. Never shame anyone about money.
 - Explain decisions in plain words, with dates and amounts.
 - Don't use Markdown formatting; your replies appear in a chat bubble.`,
@@ -101,7 +103,7 @@ async function create(params: Anthropic.MessageCreateParamsNonStreaming): Promis
   return client.messages.create(params);
 }
 
-async function claudeReply(thread: string, role: Role, speaker: Member): Promise<string> {
+async function claudeReply(thread: string, role: Role, speaker: ServerMember): Promise<string> {
   const tools = toolsFor(role);
   const convo: Anthropic.MessageParam[] = history(thread);
   const system = systemPrompt(role, speaker);
@@ -137,7 +139,7 @@ async function claudeReply(thread: string, role: Role, speaker: Member): Promise
   return "I've done what I can for now. Ask me again if anything is still open.";
 }
 
-async function viaOpenRouter(thread: string, role: Role, speaker: Member): Promise<string> {
+async function viaOpenRouter(thread: string, role: Role, speaker: ServerMember): Promise<string> {
   const tools = toolsFor(role);
   return openRouterReply({
     apiKey: config.openrouter.apiKey,

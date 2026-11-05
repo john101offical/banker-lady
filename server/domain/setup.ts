@@ -43,6 +43,7 @@ export function cleanDraft(raw: unknown, today: string): { draft: CircleDraft; p
         name,
         callName: text(m.callName, 40) || callNameOf(name),
         savingFor: text(m.savingFor, 120),
+        privateDetail: text(m.privateDetail, 200),
         needBy: isoDate(m.needBy),
         isNew: m.isNew === true,
         paysCash: m.paysCash === true,

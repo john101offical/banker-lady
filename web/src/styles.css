@@ -284,7 +284,7 @@ button.link {
 
 .setup-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.8fr) minmax(0, 1.6fr) 134px 104px 38px 38px 38px 58px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.75fr) minmax(0, 1.2fr) minmax(0, 1.2fr) 134px 100px 34px 34px 34px 54px;
   align-items: center;
   gap: 8px;
   margin: 0;

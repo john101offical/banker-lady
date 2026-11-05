@@ -25,8 +25,8 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 /** When the draw order changes, let the browser animate each stamp to its new week. */
-function useAnimatedSnapshot(): { snap: Snapshot | null; connected: boolean } {
-  const { snap: incoming, connected } = useSnapshot();
+function useAnimatedSnapshot(viewer: string): { snap: Snapshot | null; connected: boolean } {
+  const { snap: incoming, connected } = useSnapshot(viewer);
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const lastOrder = useRef<string>('');
   useEffect(() => {
@@ -46,8 +46,8 @@ function useAnimatedSnapshot(): { snap: Snapshot | null; connected: boolean } {
 }
 
 export default function App() {
-  const { snap, connected } = useAnimatedSnapshot();
   const [persona, setPersona] = useState<string>('host');
+  const { snap, connected } = useAnimatedSnapshot(persona);
   const [tab, setTab] = useState<Tab>('timeline');
   const [toast, setToast] = useState<string | null>(null);
   const [seen, setSeen] = useState<Record<string, number>>({});
@@ -61,11 +61,7 @@ export default function App() {
   }, [toast]);
 
   // Unread dots: banker messages a persona hasn't looked at yet.
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const m of snap?.messages ?? []) if (m.from === 'banker') c[m.thread] = (c[m.thread] ?? 0) + 1;
-    return c;
-  }, [snap?.messages]);
+  const counts = useMemo<Record<string, number>>(() => snap?.messageCounts ?? {}, [snap?.messageCounts]);
   useEffect(() => {
     setSeen((s) => (s[persona] === counts[persona] ? s : { ...s, [persona]: counts[persona] ?? 0 }));
   }, [persona, counts]);

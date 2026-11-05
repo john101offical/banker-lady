@@ -21,14 +21,20 @@ const SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['name', 'callName', 'savingFor', 'needBy', 'isNew', 'paysCash', 'isHost', 'language'],
+        required: ['name', 'callName', 'savingFor', 'privateDetail', 'needBy', 'isNew', 'paysCash', 'isHost', 'language'],
         properties: {
           name: { type: 'string', description: 'Full name, as written' },
           callName: { type: 'string', description: 'What people call them, such as "Miss P". Otherwise their first name' },
           savingFor: {
             type: 'string',
-            description: 'A short phrase in their words that reads well after "For", such as "a new fridge"',
+            description:
+              'A short public label that reads well after "For", such as "a new fridge". The whole circle sees it, so keep anything sensitive general, such as "family" or "health"',
           },
+          privateDetail: nullable({
+            type: 'string',
+            description:
+              'The sensitive specifics behind a general label: illness, family trouble, debts, or anything they want kept quiet. Null if nothing is sensitive',
+          }),
           needBy: nullable({ type: 'string', format: 'date', description: 'When they need the money. Null if no date was given' }),
           isNew: { type: 'boolean', description: 'New to this circle' },
           paysCash: { type: 'boolean', description: 'Pays their hand in cash' },
@@ -59,6 +65,7 @@ export async function readCircleDescription(description: string, today: string):
     maxTokens: 2500,
     system: `You read a host's description of a rotating savings circle (a partner, susu, tanda or committee) and fill in a form. Today is ${today}.
 
+- The label goes in a book the whole circle reads, so "her mother's medical bills" becomes the label "family" with that wording as the private detail. A fridge or school fees are fine as they are.
 - Only include people they mention, and only facts they state. The writer counts as a member if they say they are in it.
 - Write dates as YYYY-MM-DD. A date with no year means its next occurrence after today. "By Christmas" means December 25. A month alone means the last day of that month.
 - Use null for anything not stated rather than guessing, and add a note when a missing fact matters, such as a member with no need date or no hand amount.

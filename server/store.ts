@@ -17,9 +17,35 @@ import type {
 import { computeRisk, explainOrder } from './domain/circle.js';
 import { nowIso } from './domain/dates.js';
 
+/** A member as the server knows them. Everything added here stays here unless publicMember copies it. */
+export interface ServerMember extends Member {
+  /** PayPal email (a sandbox personal account in sandbox mode). */
+  email: string;
+  /** The sensitive specifics of their goal. Only their own chat with the banker may use this. */
+  privateDetail?: string;
+  /** What their own phone suggests saying when they need to draw early. */
+  emergencyLine?: string;
+}
+
+function publicMember(m: ServerMember): Member {
+  return {
+    id: m.id,
+    name: m.name,
+    callName: m.callName,
+    language: m.language,
+    goal: { label: m.goal.label, needBy: m.goal.needBy },
+    isNew: m.isNew,
+    circlesCompleted: m.circlesCompleted,
+    paysCash: m.paysCash,
+    swapPolicy: m.swapPolicy,
+    isHost: m.isHost,
+    color: m.color,
+  };
+}
+
 export interface State {
   circle: Circle;
-  members: Member[];
+  members: ServerMember[];
   hands: Hand[];
   draws: Draw[];
   swaps: Swap[];
@@ -59,13 +85,13 @@ class Store extends EventEmitter {
     }, 30);
   }
 
-  member(id: string): Member {
+  member(id: string): ServerMember {
     const m = this.state.members.find((x) => x.id === id);
     if (!m) throw new Error(`Unknown member "${id}"`);
     return m;
   }
 
-  findMember(nameOrId: string): Member | undefined {
+  findMember(nameOrId: string): ServerMember | undefined {
     const q = nameOrId.trim().toLowerCase();
     return this.state.members.find(
       (m) =>
@@ -108,18 +134,26 @@ class Store extends EventEmitter {
     this.changed();
   }
 
-  snapshot(): Snapshot {
+  /** What one phone may see. With no viewer, or an unknown one, it carries no chat at all. */
+  snapshot(viewer?: string): Snapshot {
     const s = this.state;
+    const me = s.members.find((m) => m.id === viewer);
+    const who = viewer === 'host' || me ? viewer! : null;
+    const messageCounts: Record<string, number> = {};
+    for (const m of s.messages) if (m.from === 'banker') messageCounts[m.thread] = (messageCounts[m.thread] ?? 0) + 1;
     return {
       version: this.version,
+      viewer: who,
       mode: this.mode,
       circle: s.circle,
-      members: s.members,
+      members: s.members.map(publicMember),
       hands: s.hands,
       draws: s.draws,
       swaps: s.swaps,
       approvals: s.approvals,
-      messages: s.messages,
+      messages: who ? s.messages.filter((m) => m.thread === who) : [],
+      messageCounts,
+      viewerLine: me?.emergencyLine,
       activity: s.activity,
       plan: explainOrder(s.circle, s.members, s.draws, s.swaps),
       risk: computeRisk(s.circle, s.members, s.hands, s.draws),

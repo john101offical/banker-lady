@@ -28,13 +28,13 @@ Banker Lady is an AI banker for partner (susu, tanda, committee) savings circles
 - Members can only act for themselves; enforce it in the tool layer, not just the prompt.
 - Keep mock PayPal and the offline banker working: judges may run the app with no keys.
 - Never commit secrets. Keys live in `.env` locally and in Render's environment settings.
-- Keep a member's private reasons private: others only hear "a family emergency". The tool layer enforces this too: `get_member` hides other members' goals, and the model can't rewrite the goal text the book shows.
+- Keep a member's private reasons private: others only hear "a family emergency". A goal has a public `label` and a server-only `privateDetail` (on `ServerMember` in `store.ts`, so the web types can't even name it). `store.snapshot(viewer)` copies members field by field and sends only the viewer's own chat, and the model sees a private detail only in that member's own chat. Swap requests use fixed wording with no text from the model, so nothing it read can reach another member. `npm test` checks all of this over the real API.
 - UI copy is plain and sentence case. Colours and fonts are CSS variables at the top of `web/src/styles.css` (ballpoint ink on a ruled exercise book, violet stamps for draws).
 - After changes: `npm test`, both type checks, and a screenshot of the running app to check the UI.
 
 ## Demo story (keep it working)
 
-Week 3 of six, $50 hands, $300 draws. Miss Joyce pays cash, Devon is late and gets a Patois reminder, Devon pays in PayPal, Marcia's mother is in hospital so she asks to draw early, Kezia (Week 3, fees due Jan 4) swaps to Week 6 without harm, Miss P approves, and Marcia's $300 Payout lands.
+Week 3 of six, $50 hands, $300 draws. Miss Joyce pays cash, Devon is late and gets a Patois reminder, Devon pays in PayPal, Marcia's mother is in hospital so she asks to draw early (the circle only ever sees "family", then "family emergency"), Kezia (Week 3, fees due Jan 4) swaps to Week 6 without harm, Miss P approves, and Marcia's $300 Payout lands.
 
 ## Not built yet
 

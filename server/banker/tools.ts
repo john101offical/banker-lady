@@ -1,7 +1,6 @@
 // The tools the AI banker can use. Each one calls the same actions as the app's buttons.
 // Money never moves from here: payouts only create an approval request for the host.
 import type Anthropic from '@anthropic-ai/sdk';
-import type { LanguageCode } from '../../shared/types.js';
 import * as actions from '../actions.js';
 import { drawWeekOf, findSwapOptions, weekDate } from '../domain/circle.js';
 import { longDay, money, shortDay } from '../domain/dates.js';
@@ -20,13 +19,6 @@ interface BankerTool {
   run(input: Record<string, any>, ctx: ToolContext): Promise<unknown> | unknown;
 }
 
-const LANGUAGE_NAME: Record<LanguageCode, string> = {
-  en: 'English',
-  jm: 'Jamaican Patois',
-  es: 'Spanish',
-  ht: 'Haitian Creole',
-};
-
 const memberIdProp = () => ({
   type: 'string' as const,
   enum: store.state.members.map((m) => m.id),
@@ -42,7 +34,7 @@ function selfOnly(input: Record<string, any>, ctx: ToolContext, key = 'member_id
   return id;
 }
 
-function memberView(id: string) {
+function memberView(id: string, ctx: ToolContext) {
   const s = store.state;
   const m = store.member(id);
   const week = drawWeekOf(s.circle, id);
@@ -53,6 +45,8 @@ function memberView(id: string) {
     call_name: m.callName,
     language: m.language,
     saving_for: m.goal.label,
+    // The model sees this only in the chat where it can do no harm: the member's own.
+    ...(ctx.role === 'member' && ctx.speakerId === id && m.privateDetail ? { private_detail: m.privateDetail } : {}),
     need_by: m.goal.needBy ? longDay(m.goal.needBy) : 'no fixed date',
     new_to_circle: m.isNew,
     pays_cash: m.paysCash,
@@ -60,21 +54,6 @@ function memberView(id: string) {
     draw_date: longDay(weekDate(s.circle, week)),
     draw_status: store.draw(week)?.status,
     this_week_hand: hand ? { status: hand.status, method: hand.method ?? null, reminders_sent: hand.remindersSent } : null,
-  };
-}
-
-/** What one member may see about another: when they draw and how to write to them. Goals stay private. */
-function publicView(id: string) {
-  const s = store.state;
-  const m = store.member(id);
-  const week = drawWeekOf(s.circle, id);
-  return {
-    member_id: m.id,
-    call_name: m.callName,
-    language: LANGUAGE_NAME[m.language],
-    draw_week: week,
-    draw_date: longDay(weekDate(s.circle, week)),
-    draw_status: store.draw(week)?.status,
   };
 }
 
@@ -92,15 +71,11 @@ const TOOLS = (): BankerTool[] => [
   {
     def: {
       name: 'get_member',
-      description:
-        "One member's language, draw week and status. For the host, or for a member asking about themselves, also their goal, need-by date and this week's hand. Other members' goals are private.",
+      description: "One member's public goal label, need-by date, language, draw week and this week's hand.",
       input_schema: { type: 'object', properties: { member_id: memberIdProp() }, required: ['member_id'] },
     },
     roles: ['host', 'member'],
-    run: (input, ctx) => {
-      const id = String(input.member_id);
-      return ctx.role === 'member' && id !== ctx.speakerId ? publicView(id) : memberView(id);
-    },
+    run: (input, ctx) => memberView(String(input.member_id), ctx),
   },
   {
     def: {
@@ -116,7 +91,6 @@ const TOOLS = (): BankerTool[] => [
       return findSwapOptions(s.circle, s.members, s.draws, id).map((o) => ({
         counterparty_id: o.counterpartyId,
         counterparty: store.member(o.counterpartyId).callName,
-        counterparty_language: LANGUAGE_NAME[store.member(o.counterpartyId).language],
         target_week: o.targetWeek,
         target_date: longDay(o.targetDate),
         counterparty_would_move_to: `Week ${o.counterpartyNewWeek} (${longDay(o.counterpartyNewDate)})`,
@@ -154,7 +128,7 @@ const TOOLS = (): BankerTool[] => [
           `need_by ${needBy} is before this circle began on ${circle.startDate}. This week's draw date is ${weekDate(circle, circle.currentWeek)}.`,
         );
       }
-      // The goal's wording stays as it is: the book shows it, and an emergency's details are private.
+      // Only the date: the book shows the goal's wording, and the model must not be able to change it.
       m.goal = { ...m.goal, needBy };
       store.log('banker', `${m.callName} now needs the money by ${shortDay(needBy)}.`);
       return { ok: true, need_by: longDay(needBy) };
@@ -164,27 +138,20 @@ const TOOLS = (): BankerTool[] => [
     def: {
       name: 'request_swap',
       description:
-        "Ask another member, in their chat, to swap draw weeks with the requester. Nothing changes until they accept. Use only an option from find_swap_options with allowed=true, preferring harm_days=0. reason_public is all the other member learns about why; keep it general, e.g. 'a family emergency'. Write message_to_counterparty in counterparty_language from find_swap_options, not the requester's language; include both dates, and say nothing changes unless they agree.",
+        "Ask another member to swap draw weeks with the requester. Nothing changes until they accept. Use only an option from find_swap_options with allowed=true, preferring harm_days=0. The app writes to them itself, in their language, with both dates, and tells them only that it's a family emergency. The requester's public goal label becomes \"family emergency\".",
       input_schema: {
         type: 'object',
         properties: {
           requester_id: memberIdProp(),
           counterparty_id: memberIdProp(),
-          reason_public: { type: 'string' },
-          message_to_counterparty: { type: 'string' },
         },
-        required: ['requester_id', 'counterparty_id', 'reason_public'],
+        required: ['requester_id', 'counterparty_id'],
       },
     },
     roles: ['host', 'member'],
     run: (input, ctx) => {
       const requester = selfOnly(input, ctx, 'requester_id');
-      const r = actions.requestSwap(
-        requester,
-        String(input.counterparty_id),
-        String(input.reason_public ?? 'a family emergency'),
-        input.message_to_counterparty ? String(input.message_to_counterparty) : undefined,
-      );
+      const r = actions.requestSwap(requester, String(input.counterparty_id));
       return { ok: r.ok, result: r.text };
     },
   },

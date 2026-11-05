@@ -18,6 +18,10 @@ const today = () => new Date().toISOString().slice(0, 10);
 const host = (): Member => store.member(store.state.circle.hostId);
 const pot = () => store.state.circle.handAmount * store.state.circle.memberIds.length;
 
+/** All anyone else ever hears about why someone asked to draw early. */
+const PUBLIC_REASON = 'a family emergency';
+const PUBLIC_LABEL = 'family emergency';
+
 /** Hands whose cash is being recorded right now, so the PayPal poll doesn't also report them as paid. */
 const recordingCash = new Set<string>();
 
@@ -408,12 +412,11 @@ function settleDraw(draw: Draw, transactionId?: string, payoutItemId?: string) {
 // Swaps
 // ---------------------------------------------------------------------------
 
-export function requestSwap(
-  requesterId: string,
-  counterpartyId: string,
-  reasonPublic: string,
-  messageToCounterparty?: string,
-): { ok: boolean; text: string; swap?: Swap } {
+/**
+ * Asks another member to swap draw weeks. The wording here is fixed and comes from public facts
+ * only: no text from the requester's chat, or from a model that has read it, can reach the other member.
+ */
+export function requestSwap(requesterId: string, counterpartyId: string): { ok: boolean; text: string; swap?: Swap } {
   const s = store.state;
   const requester = store.member(requesterId);
   const counterparty = store.member(counterpartyId);
@@ -433,25 +436,26 @@ export function requestSwap(
     counterpartyId,
     fromWeek,
     toWeek,
-    reasonPublic: reasonPublic || 'a family emergency',
+    reasonPublic: PUBLIC_REASON,
     status: 'pending',
     createdAt: nowIso(),
   };
   s.swaps.push(swap);
+  // From now on the circle sees the words the other member is told. What the goal was stays with them and the banker.
+  if (!requester.privateDetail && requester.goal.label !== PUBLIC_LABEL) requester.privateDetail = requester.goal.label;
+  requester.goal = { ...requester.goal, label: PUBLIC_LABEL };
   const needBy = counterparty.goal.needBy;
   const newDate = weekDate(s.circle, fromWeek);
-  const text =
-    messageToCounterparty?.trim() ||
-    say.swapAsk(counterparty, {
-      requesterName: requester.callName,
-      reason: swap.reasonPublic,
-      week: toWeek,
-      date: longDay(weekDate(s.circle, toWeek)),
-      newWeek: fromWeek,
-      newDate: longDay(newDate),
-      spareDays: needBy ? daysBetween(newDate, needBy) : null,
-      needBy: needBy ? shortDay(needBy) : null,
-    });
+  const text = say.swapAsk(counterparty, {
+    requesterName: requester.callName,
+    reason: swap.reasonPublic,
+    week: toWeek,
+    date: longDay(weekDate(s.circle, toWeek)),
+    newWeek: fromWeek,
+    newDate: longDay(newDate),
+    spareDays: needBy ? daysBetween(newDate, needBy) : null,
+    needBy: needBy ? shortDay(needBy) : null,
+  });
   store.addMessage({ thread: counterparty.id, from: 'banker', kind: 'swap_request', text, data: { swapId: swap.id } });
   store.addMessage({
     thread: 'host',

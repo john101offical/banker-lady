@@ -11,6 +11,7 @@ Banker Lady keeps the warmth of the banker and removes the single point of failu
 - **The draw order is fair by design.** Members say what they're saving for and when; Banker Lady orders the draws so everyone's money arrives before they need it, and new members draw only after paying in for a few weeks.
 - **Emergencies get handled kindly.** When someone needs their draw early, Banker Lady finds a member who can swap without being hurt, asks them in their own language, and moves the draw only if they agree.
 - **Reminders without shame,** in each member's language, including Jamaican Patois.
+- **Private things stay private.** The circle sees a short label such as "family". The details stay between a member and the banker.
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/).
 
@@ -25,14 +26,14 @@ The app starts in Week 3 of the Ward 4 Partner: six members, $50 a week, a $300 
 | Kezia | January school fees | Jan 4 | Week 3 |
 | Devon | Car repair (new to the circle) | Nov 23 | Week 4 |
 | Miss P (host) | A land payment | Jan 15 | Week 5 |
-| Marcia | Her mother's medical bills | no date | Week 6 |
+| Marcia | Family (the rest is private) | no date | Week 6 |
 
 Walk through it in about two minutes:
 
 1. **Miss P's phone (host):** tap "Joyce gave me cash". Banker Lady records the cash on Joyce's PayPal invoice.
 2. Tap "Remind Devon, kindly". Devon gets a warm reminder in Patois with a PayPal pay button, and PayPal sends its own invoice reminder.
 3. **Devon's phone:** tap **Pay with PayPal**. All six hands are now in, and an approval appears for Kezia's draw.
-4. **Marcia's phone:** her mother is in hospital. Send the suggested message (or record a voice note). Banker Lady finds that Kezia can swap Week 3 for Week 6 and still have her money 14 days before her fees are due, and asks her.
+4. **Marcia's phone:** her mother is in hospital. Send the suggested message (or record a voice note). Banker Lady finds that Kezia can swap Week 3 for Week 6 and still have her money 14 days before her fees are due, and asks her. Everyone else, Kezia and the host included, only ever sees "family emergency".
 5. **Kezia's phone:** tap **Yes, swap**. The draw stamp moves in the book and the timeline.
 6. **Approve payout** at the top. $300 lands in Marcia's PayPal.
 7. Look at the **PayPal ledger**, **Activity** and **Who still owes** tabs.
@@ -62,6 +63,7 @@ The code is in [`server/paypal/sandbox.ts`](server/paypal/sandbox.ts). Without k
 
 - **Claude as the banker** ([`server/banker/agent.ts`](server/banker/agent.ts)): every message from a member or the host goes to Claude Sonnet 5.5 through [OpenRouter](https://openrouter.ai) ([`server/banker/openrouter.ts`](server/banker/openrouter.ts)), with a set of tools ([`server/banker/tools.ts`](server/banker/tools.ts)): check the circle, find swap options, request a swap, record cash, send a reminder, ask the host to approve a payout. Members can only act for themselves; payouts only create an approval request. The Anthropic API works too, if you set an Anthropic key instead.
 - **A fair draw order** ([`server/domain/circle.ts`](server/domain/circle.ts)): an assignment solver (the Hungarian algorithm) places draws so nobody is paid after their need date where avoidable, earlier needs get earlier weeks, and new members wait for the trust period. Each placement comes with a plain-language reason.
+- **Private details stay with the banker:** a member's private detail never leaves the server. `/api/state` copies members field by field and carries only the viewer's own chat, and the model sees a private detail only when it's talking to that member. Swap requests use fixed wording, so the model can't pass on what it was told. `npm test` checks this over the real API. The demo has no sign-in, so anyone can still pick Marcia's phone from the list; a production version would add member sign-in.
 - **Harmless swaps:** swap options are scored by how many days late the other member would become; the banker only proposes swaps that cost nobody anything.
 - **Offline mode** ([`server/banker/offline.ts`](server/banker/offline.ts)): without an AI key, simple rules cover the demo using the same actions, so judges can run it with no keys at all. If the AI service is down, the banker falls back to these rules too.
 

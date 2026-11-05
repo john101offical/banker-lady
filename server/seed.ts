@@ -1,12 +1,12 @@
 // The demo circle: six members of the Ward 4 Partner, $50 a week, one $300 draw each Monday.
 // Weeks 1 and 2 ran on Miss P's paper partner book; from Week 3 everything runs through PayPal.
-import type { Circle, CircleDraft, Draw, Hand, Member, Message } from '../shared/types.js';
+import type { Circle, CircleDraft, Draw, Hand, Message } from '../shared/types.js';
 import { issueInvoices, newRunTag } from './actions.js';
 import { config } from './config.js';
 import { planDrawOrder, weekDate } from './domain/circle.js';
 import { longDay, nowIso } from './domain/dates.js';
 import { cleanDraft, memberId } from './domain/setup.js';
-import { newId, store, type State } from './store.js';
+import { newId, store, type ServerMember, type State } from './store.js';
 
 const START = '2026-11-16';
 const HAND = 50;
@@ -15,8 +15,8 @@ function email(id: string): string {
   return config.memberEmails[id] || config.defaultMemberEmail || `${id}@banker-lady.example.com`;
 }
 
-export function demoMembers(): Member[] {
-  const m = (x: Omit<Member, 'email'>): Member => ({ ...x, email: email(x.id) });
+export function demoMembers(): ServerMember[] {
+  const m = (x: Omit<ServerMember, 'email'>): ServerMember => ({ ...x, email: email(x.id) });
   return [
     m({
       id: 'joyce',
@@ -84,7 +84,9 @@ export function demoMembers(): Member[] {
       name: 'Marcia Clarke',
       callName: 'Marcia',
       language: 'jm',
-      goal: { label: "her mother's medical bills", needBy: null },
+      goal: { label: 'family', needBy: null },
+      privateDetail: "her mother's medical bills",
+      emergencyLine: 'Mi madda inna hospital an dem need money fi di medicine. Mi can get mi draw early?',
       isNew: false,
       circlesCompleted: 4,
       paysCash: false,
@@ -96,7 +98,7 @@ export function demoMembers(): Member[] {
 
 const COLORS = ['#A0442F', '#2E7D6B', '#8A6A1F', '#3E54A3', '#6B3FA0', '#A3325E', '#2F6F8F', '#6E7A26', '#8C4A7A', '#3F7D3A', '#B0562B', '#4A5BB0'];
 
-/** The demo cast as a filled-in form: the "Start a new circle" fallback when there's no AI key. */
+/** The demo cast as a filled-in form, for "Start a new circle" with no AI key. Anyone can open it, so no private details. */
 export function demoDraft(today: string): CircleDraft {
   return cleanDraft(
     {
@@ -121,7 +123,7 @@ export function demoDraft(today: string): CircleDraft {
 /** A new circle in Week 1 with its order worked out, and nothing sent to PayPal. */
 export function buildDraftScene(draft: CircleDraft): State {
   const taken = new Set<string>();
-  const members = draft.members.map((d, i): Member => {
+  const members = draft.members.map((d, i): ServerMember => {
     const id = memberId(d.name, taken);
     taken.add(id);
     return {
@@ -131,6 +133,7 @@ export function buildDraftScene(draft: CircleDraft): State {
       email: email(id),
       language: d.language,
       goal: { label: d.savingFor || 'their own goal', needBy: d.needBy },
+      privateDetail: d.privateDetail || undefined,
       isNew: d.isNew,
       circlesCompleted: d.isNew ? 0 : 1,
       paysCash: d.paysCash,

@@ -1,6 +1,7 @@
 // Walks the demo script end to end against the mock gateway and offline banker.
 // Run with: npm test
 import assert from 'node:assert/strict';
+import type { AddressInfo } from 'node:net';
 
 // Blank every key so a local .env can't send this test to real services.
 process.env.PAYPAL_CLIENT_ID = '';
@@ -221,6 +222,107 @@ console.log('✓ a three-person circle runs through to a payout:', store.state.c
 await loadScene('demo');
 assert.equal(store.state.circle.id, 'ward4');
 assert.equal(store.state.circle.phase, 'running');
+
+// 16. Marcia's details stay between her and the banker, checked over the real API.
+const { app } = await import('./app.js');
+const server = app.listen(0);
+await new Promise((r) => server.once('listening', r));
+const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+const DETAIL = "her mother's medical bills";
+const PRIVATE = /medical|hospital|madda|mother|medicine/i;
+const stateFor = async (viewer?: string) => (await fetch(`${base}/api/state${viewer ? `?viewer=${viewer}` : ''}`)).text();
+const firstFrame = async (viewer: string) => {
+  const res = await fetch(`${base}/api/stream?viewer=${viewer}`);
+  const reader = res.body!.getReader();
+  const { value } = await reader.read();
+  await reader.cancel();
+  return new TextDecoder().decode(value);
+};
+/** Everyone but Marcia: nobody's phone, the host, each other member, an unknown name, and the live stream. */
+async function assertNothingLeaks(when: string) {
+  const viewers = [undefined, 'host', 'not-a-member', ...store.state.members.filter((m) => m.id !== 'marcia').map((m) => m.id)];
+  for (const viewer of viewers) {
+    const text = await stateFor(viewer);
+    assert.doesNotMatch(text, PRIVATE, `/api/state?viewer=${viewer} ${when}`);
+    assert.doesNotMatch(text, /privateDetail|emergencyLine|"email"|@/, `server-only fields in /api/state?viewer=${viewer} ${when}`);
+    const shown = JSON.parse(text);
+    assert.ok(shown.messages.every((m: { thread: string }) => m.thread === viewer), `only their own chat for ${viewer} ${when}`);
+  }
+  assert.doesNotMatch(await firstFrame('kezia'), PRIVATE, `/api/stream ${when}`);
+  assert.doesNotMatch(await firstFrame('host'), PRIVATE, `/api/stream ${when}`);
+  for (const m of store.state.messages.filter((x) => x.thread !== 'marcia')) {
+    assert.doesNotMatch(m.text, PRIVATE, `message in ${m.thread}'s chat ${when}`);
+  }
+}
+assert.equal(store.member('marcia').goal.label, 'family');
+assert.equal(store.member('marcia').privateDetail, DETAIL);
+await assertNothingLeaks('at the start');
+assert.doesNotMatch(await (await fetch(`${base}/api/setup/template`)).text(), PRIVATE, 'the form anyone can open');
+assert.doesNotMatch(await (await fetch(`${base}/api/health`)).text(), PRIVATE);
+const ownView = JSON.parse(await stateFor('marcia'));
+assert.match(ownView.viewerLine, /hospital/, "Marcia's own phone suggests her own words");
+assert.equal(JSON.parse(await stateFor('devon')).viewerLine, undefined, 'and nobody else gets them');
+
+await actions.recordCash('joyce');
+await actions.simulatePayPalPayment(store.hand('devon', W)!.id);
+await say('marcia', `Mi madda inna hospital, is ${DETAIL}. Mi can get mi draw early?`);
+const pending = store.state.swaps.find((x) => x.status === 'pending')!;
+assert.equal(pending.reasonPublic, 'a family emergency');
+assert.equal(store.member('marcia').goal.label, 'family emergency', 'her label now matches what Kezia is told');
+assert.equal(store.member('marcia').privateDetail, DETAIL, 'and the banker still knows the rest');
+assert.match(lastBanker('kezia') ?? '', /family emergency/);
+assert.match(store.snapshot('kezia').plan.find((p) => p.memberId === 'marcia')!.reason, /^Family emergency/);
+await assertNothingLeaks('after she asks');
+assert.match(await stateFor('marcia'), /madda inna hospital/, 'her own phone still shows her own words');
+
+actions.respondSwap(pending.id, true);
+const moved = store.state.approvals.find((a) => a.status === 'pending' && a.memberId === 'marcia')!;
+assert.match(moved.note, /family emergency/, 'the approval banner uses the public words');
+assert.doesNotMatch(moved.note, PRIVATE);
+await assertNothingLeaks('after the swap');
+await actions.decideApproval(moved.id, true);
+await until(() => store.draw(W)!.status === 'paid', 'payout to settle');
+await assertNothingLeaks('after the payout');
+console.log('✓ private details stay out of /api/state, the live stream and other members\' messages');
+
+// A member with no private detail keeps what they were saving for, and the circle sees the same words.
+await loadScene('demo');
+const andreAsks = actions.requestSwap('pauline', 'andre');
+assert.equal(andreAsks.ok, false, 'Week 2 is already paid');
+const paulineAsks = actions.requestSwap('pauline', 'kezia');
+assert.equal(paulineAsks.ok, true);
+assert.equal(store.member('pauline').goal.label, 'family emergency');
+assert.equal(store.member('pauline').privateDetail, 'a land payment');
+
+// The swap request speaks every language the banker can, with no model involved.
+const { say: words } = await import('./banker/templates.js');
+const ask = { requesterName: 'Ana', reason: 'a family emergency', week: 3, date: 'Mon Nov 30', newWeek: 6, newDate: 'Mon Dec 21', spareDays: 14, needBy: 'Jan 4' };
+const speaking = (language: 'en' | 'jm' | 'es' | 'ht') => words.swapAsk({ ...store.member('kezia'), language }, ask);
+assert.match(speaking('en'), /family emergency/);
+assert.match(speaking('jm'), /Nutten change/);
+assert.match(speaking('es'), /emergencia familiar/);
+assert.match(speaking('ht'), /ijans fanmi/);
+
+// Private details typed into the form survive changing a draft, but don't carry over to a new circle.
+const plan = (body: unknown) =>
+  fetch(`${base}/api/setup/plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const twoPeople = (privateDetail = '') => ({
+  name: 'Two',
+  handAmount: 10,
+  members: [person('Ana Lopez', { savingFor: 'family', privateDetail }), person('Bea Ford', { savingFor: 'a stove' })],
+});
+assert.equal((await plan({ draft: twoPeople('a court case') })).status, 200);
+assert.equal(store.member('ana').privateDetail, 'a court case');
+assert.doesNotMatch(await stateFor('host'), /court case/);
+assert.doesNotMatch(await stateFor(), /court case/);
+assert.equal((await plan({ draft: twoPeople(), editing: true })).status, 200);
+assert.equal(store.member('ana').privateDetail, 'a court case', 'a blank field keeps it when changing the draft');
+assert.equal((await plan({ draft: twoPeople('a new detail'), editing: true })).status, 200);
+assert.equal(store.member('ana').privateDetail, 'a new detail');
+assert.equal((await plan({ draft: twoPeople() })).status, 200);
+assert.equal(store.member('ana').privateDetail, undefined, 'a new circle starts clean');
+server.close();
+console.log('✓ the form keeps private details through a change, and a new circle starts clean');
 
 console.log('\nActivity (newest first):');
 for (const a of store.state.activity.slice(0, 14)) console.log(` - [${a.kind}] ${a.text}`);

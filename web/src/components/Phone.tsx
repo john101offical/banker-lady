@@ -183,9 +183,8 @@ function suggestionsFor(snap: Snapshot, persona: string, me: Member): string[] {
   const hand = snap.hands.find((h) => h.memberId === me.id && h.week === week);
   if (myWeek > week) {
     out.push(
-      me.language === 'jm'
-        ? 'Mi madda inna hospital an dem need money fi di medicine. Mi can get mi draw early?'
-        : 'I have a family emergency. Can I get my draw early?',
+      snap.viewerLine ??
+        (me.language === 'jm' ? 'Mi have a family emergency. Mi can get mi draw early?' : 'I have a family emergency. Can I get my draw early?'),
     );
   }
   out.push(me.language === 'jm' ? 'Wen mi draw?' : 'When is my draw?');
@@ -198,7 +197,9 @@ export function Phone({ snap, persona }: { snap: Snapshot; persona: string }) {
   const host = members.get(snap.circle.hostId)!;
   const me = persona === 'host' ? host : members.get(persona) ?? host;
   const thread = persona;
-  const msgs = useMemo(() => snap.messages.filter((m) => m.thread === thread), [snap.messages, thread]);
+  // Just after switching phones, the snapshot still belongs to the last one for a moment.
+  const mine = snap.viewer === persona;
+  const msgs = useMemo(() => (mine ? snap.messages : []), [mine, snap.messages]);
   const typing = snap.typing.includes(thread);
   const [text, setText] = useState('');
   const [listening, setListening] = useState(false);
@@ -253,7 +254,7 @@ export function Phone({ snap, persona }: { snap: Snapshot; persona: string }) {
     setListening(true);
   };
 
-  const suggestions = suggestionsFor(snap, persona, me);
+  const suggestions = mine ? suggestionsFor(snap, persona, me) : [];
   const myWeek = snap.circle.drawOrder.indexOf(me.id) + 1;
 
   return (
@@ -275,7 +276,7 @@ export function Phone({ snap, persona }: { snap: Snapshot; persona: string }) {
           </div>
         </div>
         <div className="phone-body" ref={body} aria-live="polite">
-          {msgs.length === 0 && <p className="empty">No messages yet. Say hello to Banker Lady.</p>}
+          {mine && msgs.length === 0 && <p className="empty">No messages yet. Say hello to Banker Lady.</p>}
           {msgs.map((m) => (
             <Bubble key={m.id} m={m} snap={snap} persona={persona} />
           ))}

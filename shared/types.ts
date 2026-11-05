@@ -7,19 +7,21 @@ export type LanguageCode = 'en' | 'jm' | 'es' | 'ht';
 export type SwapPolicy = 'ask' | 'auto_if_no_harm';
 
 export interface Goal {
-  /** What the member is saving for, in their words. */
+  /** A short label the whole circle may see, such as "family". Anything sensitive stays out of it. */
   label: string;
   /** ISO date (YYYY-MM-DD) they need the money by, or null if flexible. */
   needBy: string | null;
 }
 
+/**
+ * A member as every viewer may see them. What must stay on the server, their PayPal
+ * email and the private detail of their goal, is on ServerMember in server/store.ts.
+ */
 export interface Member {
   id: string;
   name: string;
   /** How the banker addresses them, e.g. "Miss Joyce". */
   callName: string;
-  /** PayPal email (a sandbox personal account in sandbox mode). */
-  email: string;
   language: LanguageCode;
   goal: Goal;
   /** First circle with this group: draws only after paying in for a few weeks. */
@@ -162,7 +164,10 @@ export interface Circle {
 export interface DraftMember {
   name: string;
   callName: string;
+  /** The public label. */
   savingFor: string;
+  /** Stays between this member and the banker. Empty if there is none. */
+  privateDetail: string;
   needBy: string | null;
   isNew: boolean;
   paysCash: boolean;
@@ -215,6 +220,8 @@ export interface ModeInfo {
 
 export interface Snapshot {
   version: number;
+  /** Whose phone this snapshot is for. Null means nobody's: it carries no chat at all. */
+  viewer: ThreadId | null;
   mode: ModeInfo;
   circle: Circle;
   members: Member[];
@@ -222,7 +229,12 @@ export interface Snapshot {
   draws: Draw[];
   swaps: Swap[];
   approvals: Approval[];
+  /** The viewer's own thread only. Nobody's browser receives anyone else's chat. */
   messages: Message[];
+  /** Banker messages per thread: enough for the unread dots, with no words in it. */
+  messageCounts: Record<ThreadId, number>;
+  /** A line the viewer's own phone can suggest for asking to draw early. */
+  viewerLine?: string;
   activity: ActivityItem[];
   plan: PlanReason[];
   risk: RiskSummary;

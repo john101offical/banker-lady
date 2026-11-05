@@ -4,7 +4,7 @@ import { getJson, tryPost } from '../api';
 import { money } from '../util';
 
 const EXAMPLE =
-  "I'm Pauline Grant, everybody calls me Miss P, and I run our partner, the Ward 4 Partner. Six of us throw $50 a week. Joyce Reid needs a new fridge by November 20, and she always pays cash. Andre Williams wants to send a barrel home for Christmas, so he needs it by December 8. Kezia Brown has January school fees due January 4. Devon Campbell is new to us and needs a car repair by November 23. Marcia Clarke is saving for her mother's medical bills, no fixed date. I'm saving for a land payment by January 15. Joyce, Devon and Marcia like Patois.";
+  "I'm Pauline Grant, everybody calls me Miss P, and I run our partner, the Ward 4 Partner. Six of us throw $50 a week. Joyce Reid needs a new fridge by November 20, and she always pays cash. Andre Williams wants to send a barrel home for Christmas, so he needs it by December 8. Kezia Brown has January school fees due January 4. Devon Campbell is new to us and needs a car repair by November 23. Marcia Clarke is saving for family, no fixed date; it's for her aunt's surgery, but keep that between her and the banker. I'm saving for a land payment by January 15. Joyce, Devon and Marcia like Patois.";
 
 const LANGUAGES: { code: LanguageCode; label: string }[] = [
   { code: 'en', label: 'English' },
@@ -17,6 +17,7 @@ const blankMember = (): DraftMember => ({
   name: '',
   callName: '',
   savingFor: '',
+  privateDetail: '',
   needBy: null,
   isNew: false,
   paysCash: false,
@@ -33,6 +34,7 @@ function draftFromSnapshot({ circle, members }: Snapshot): CircleDraft {
       name: m.name,
       callName: m.callName,
       savingFor: m.goal.label,
+      privateDetail: '',
       needBy: m.goal.needBy,
       isNew: m.isNew,
       paysCash: m.paysCash,
@@ -109,7 +111,7 @@ export function SetupDialog({ mode, snap, onClose }: Props) {
     if (!draft) return;
     setBusy(true);
     setError(null);
-    const res = await tryPost('/api/setup/plan', { draft });
+    const res = await tryPost('/api/setup/plan', { draft, editing: mode === 'edit' });
     setBusy(false);
     if ('error' in res) {
       setError(res.error);
@@ -226,6 +228,15 @@ export function SetupDialog({ mode, snap, onClose }: Props) {
                   <input maxLength={120} value={m.savingFor} onChange={(e) => changeMember(i, { savingFor: e.target.value })} />
                 </label>
                 <label>
+                  <span className="cap">Private detail</span>
+                  <input
+                    maxLength={200}
+                    value={m.privateDetail}
+                    placeholder={mode === 'edit' ? 'Blank keeps it' : 'Optional'}
+                    onChange={(e) => changeMember(i, { privateDetail: e.target.value })}
+                  />
+                </label>
+                <label>
                   <span className="cap">Needed by</span>
                   <input type="date" value={m.needBy ?? ''} onChange={(e) => changeMember(i, { needBy: e.target.value || null })} />
                 </label>
@@ -275,6 +286,10 @@ export function SetupDialog({ mode, snap, onClose }: Props) {
           >
             Add a person
           </button>
+          <p className="setup-small">
+            The whole circle sees what each person is saving for, so keep it general. A private detail stays between that person and
+            the banker.
+          </p>
           <p className="setup-small">
             {people} {people === 1 ? 'person' : 'people'} at {money(draft.handAmount || 0)} a week: each draw is{' '}
             {money((draft.handAmount || 0) * people)}, over {people} weeks. Nothing goes to PayPal until you have checked the order.

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Snapshot } from '../../shared/types';
 
-/** Live circle state, pushed by the server whenever anything changes. */
-export function useSnapshot(): { snap: Snapshot | null; connected: boolean } {
+/** Live circle state for one phone, pushed by the server whenever anything changes. */
+export function useSnapshot(viewer: string): { snap: Snapshot | null; connected: boolean } {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [connected, setConnected] = useState(false);
   useEffect(() => {
@@ -10,7 +10,7 @@ export function useSnapshot(): { snap: Snapshot | null; connected: boolean } {
     let closed = false;
     let retry: ReturnType<typeof setTimeout> | null = null;
     const open = () => {
-      source = new EventSource('/api/stream');
+      source = new EventSource(`/api/stream?viewer=${encodeURIComponent(viewer)}`);
       source.onopen = () => setConnected(true);
       source.onmessage = (e) => {
         try {
@@ -31,7 +31,7 @@ export function useSnapshot(): { snap: Snapshot | null; connected: boolean } {
       if (retry) clearTimeout(retry);
       source?.close();
     };
-  }, []);
+  }, [viewer]);
   return { snap, connected };
 }
 
