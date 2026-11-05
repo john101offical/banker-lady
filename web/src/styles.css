@@ -874,6 +874,75 @@ button.link {
   flex-wrap: wrap;
 }
 
+.ask-ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--tint);
+}
+
+.ask-ledger label {
+  font: 600 24px/1 var(--hand);
+  color: var(--ink);
+}
+
+.ask-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ask-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--sheet);
+  color: var(--text);
+  font: inherit;
+}
+
+.ask-row button {
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-weight: 600;
+}
+
+.ask-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ask-examples button {
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ask-examples button:hover:not(:disabled) {
+  border-color: var(--ink-soft);
+}
+
+.ask-reply {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ask-reply.unsure {
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .search input {
   width: 250px;
   max-width: 100%;

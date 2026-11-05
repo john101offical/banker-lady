@@ -18,6 +18,7 @@ Banker Lady is an AI banker for partner (susu, tanda, committee) savings circles
 - `server/paypal/sandbox.ts`: real PayPal REST calls (Invoicing v2, Payouts v1). `mock.ts` simulates them when no keys are set.
 - `server/banker/agent.ts`: picks the brain. With `OPENROUTER_API_KEY` set it uses `openrouter.ts` (OpenAI-compatible chat completions with tool calling, model from `OPENROUTER_MODEL`, default `anthropic/claude-sonnet-5.5`). Otherwise, with `ANTHROPIC_API_KEY`, it calls the Anthropic SDK directly. Don't send `temperature` to Claude Sonnet 5.5; the API rejects it. `tools.ts` lists the tools and which role (host or member) may use each. `offline.ts` is the no-key fallback and the fallback when the AI call fails. `templates.ts` holds fixed wording, including Jamaican Patois.
 - `server/domain/setup.ts` and `server/banker/setup.ts`: "Start a new circle". The model reads the host's words through `response_format` into a form; `cleanDraft` checks everything, whoever wrote it. Claude's structured outputs reject `minimum`, `maxLength` and similar, and need `additionalProperties: false` on every object, so limits live in `cleanDraft`.
+- `server/banker/ledger.ts` and `shared/ledger.ts`: "Ask the ledger". The model chooses columns and operators from fixed lists through `response_format`, and `buildFilterModel` writes the AG Grid filter, so it can only ever filter. `ledgerByRules` answers with keyword rules when there's no model.
 - `server/seed.ts`: the demo circle (Ward 4 Partner, Week 3), and new circles as drafts. A draft (`circle.phase`) shows its order and reasons with no PayPal invoices; only `startCircle` sends them.
 - `shared/types.ts`: types used by both server and web.
 - `web/src/`: React app. `Book.tsx` is the partner book grid, `Phone.tsx` the member and host phones, `Timeline.tsx` the Bryntum Scheduler, `Ledger.tsx` the AG Grid ledger.
@@ -38,5 +39,4 @@ Week 3 of six, $50 hands, $300 draws. Miss Joyce pays cash, Devon is late and ge
 
 ## Not built yet
 
-- "Ask the ledger": plain-English questions turned into AG Grid filters.
 - PayPal webhooks instead of polling; a database instead of in-memory state.

@@ -1,8 +1,10 @@
 import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef } from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { ledgerRows, type LedgerAnswer, type LedgerRow } from '../../../shared/ledger';
 import type { Snapshot } from '../../../shared/types';
-import { memberMap, money, shortDay, weekDate } from '../util';
+import { post } from '../api';
+import { money, shortDay } from '../util';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -21,15 +23,25 @@ const theme = themeQuartz.withParams({
   wrapperBorderRadius: 10,
 });
 
-interface Row {
-  week: number;
-  date: string;
-  member: string;
-  kind: 'Hand' | 'Draw';
-  amount: number;
-  status: string;
-  method: string;
-  reference: string;
+type Row = LedgerRow;
+
+// Asking the ledger can put several conditions on one column, such as Due or Reminded,
+// and "weeks 1 to 2" means both of those weeks, which AG Grid's ranges leave out by default.
+const MANY = { maxNumConditions: 4, inRangeInclusive: true };
+const EXAMPLES = ['Who paid cash?', 'Who still owes this week?', 'Show me the draws', 'Anything over $100?'];
+
+function shownLine({ rows, people }: { rows: number; people: string[] }): string {
+  if (rows === 0) return 'Nothing in the ledger matches.';
+  const count = `${rows} ${rows === 1 ? 'row' : 'rows'}`;
+  if (people.length === 1) return `${count}, all ${people[0]}.`;
+  return people.length <= 3 ? `${count}: ${people.join(', ')}.` : `${count} across ${people.length} people.`;
+}
+
+/** The grid hands the date filter a local midnight; rows hold plain YYYY-MM-DD. */
+function compareDay(filterDay: Date, cell: string): number {
+  const [y, m, d] = String(cell).split('-').map(Number);
+  const day = new Date(y, m - 1, d).getTime();
+  return day < filterDay.getTime() ? -1 : day > filterDay.getTime() ? 1 : 0;
 }
 
 const STATUS_CLASS: Record<string, string> = {
@@ -45,66 +57,55 @@ const STATUS_CLASS: Record<string, string> = {
 
 export function Ledger({ snap }: { snap: Snapshot }) {
   const [q, setQ] = useState('');
-  const members = memberMap(snap);
-  const rows = useMemo<Row[]>(() => {
-    const { circle } = snap;
-    const out: Row[] = [];
-    for (const h of snap.hands) {
-      if (h.status === 'upcoming') continue;
-      const m = members.get(h.memberId)!;
-      out.push({
-        week: h.week,
-        date: (h.paidAt ?? weekDate(circle, h.week)).slice(0, 10),
-        member: m.name,
-        kind: 'Hand',
-        amount: h.amount,
-        status: h.status === 'paid' ? 'Paid' : h.remindersSent ? 'Reminded' : 'Due',
-        method:
-          h.status !== 'paid'
-            ? 'PayPal invoice sent'
-            : h.method === 'cash'
-              ? h.invoiceNumber
-                ? 'Cash, recorded on invoice'
-                : 'Cash'
-              : h.method === 'book'
-                ? 'Partner book'
-                : 'PayPal',
-        reference: h.invoiceNumber ?? (h.method === 'book' || h.method === 'cash' ? 'Paper book' : ''),
-      });
-    }
-    for (const d of snap.draws) {
-      if (d.status === 'upcoming' || d.status === 'collecting') continue;
-      const m = members.get(d.memberId)!;
-      const status =
-        d.status === 'paid'
-          ? 'Received'
-          : d.status === 'processing'
-            ? 'Sending'
-            : d.status === 'awaiting_approval'
-              ? 'Awaiting approval'
-              : d.status === 'ready'
-                ? 'Ready'
-                : 'Failed';
-      out.push({
-        week: d.week,
-        date: (d.paidAt ?? weekDate(circle, d.week)).slice(0, 10),
-        member: m.name,
-        kind: 'Draw',
-        amount: d.amount,
-        status,
-        method: d.method === 'book' ? 'Partner book' : 'PayPal Payout',
-        reference: d.transactionId ?? d.payoutBatchId ?? (d.method === 'book' ? 'Paper book' : ''),
-      });
-    }
-    return out.sort((a, b) => b.week - a.week || (a.kind === b.kind ? a.member.localeCompare(b.member) : a.kind === 'Draw' ? -1 : 1));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snap.hands, snap.draws]);
+  const grid = useRef<AgGridReact<Row>>(null);
+  const [question, setQuestion] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [reply, setReply] = useState<LedgerAnswer | null>(null);
+  const [shown, setShown] = useState<{ rows: number; people: string[] } | null>(null);
+  const rows = useMemo(() => ledgerRows(snap), [snap.hands, snap.draws, snap.members, snap.circle]);
+
+  const countShown = () => {
+    const api = grid.current?.api;
+    if (!api) return;
+    const people = new Set<string>();
+    api.forEachNodeAfterFilter((n) => {
+      if (n.data) people.add(n.data.member);
+    });
+    setShown({ rows: api.getDisplayedRowCount(), people: [...people] });
+  };
+
+  const ask = async (text: string) => {
+    const clean = text.trim();
+    const api = grid.current?.api;
+    if (!clean || !api) return;
+    setQuestion(clean);
+    setAsking(true);
+    const res = await post<LedgerAnswer>('/api/ledger/ask', { question: clean });
+    setAsking(false);
+    if (!res) return;
+    setReply(res);
+    if (!res.understood) return;
+    api.setFilterModel(Object.keys(res.filterModel).length ? res.filterModel : null);
+    api.applyColumnState({
+      state: res.sort ? [{ colId: res.sort.column, sort: res.sort.direction }] : [],
+      defaultState: { sort: null },
+    });
+    countShown();
+  };
+
+  const clear = () => {
+    const api = grid.current?.api;
+    api?.setFilterModel(null);
+    api?.applyColumnState({ defaultState: { sort: null } });
+    setReply(null);
+    setQuestion('');
+  };
 
   const columns = useMemo<ColDef<Row>[]>(
     () => [
-      { field: 'week', headerName: 'Week', width: 86, filter: 'agNumberColumnFilter' },
-      { field: 'member', headerName: 'Member', flex: 1.3, minWidth: 140, filter: true },
-      { field: 'kind', headerName: 'Type', width: 96, filter: true },
+      { field: 'week', headerName: 'Week', width: 86, filter: 'agNumberColumnFilter', filterParams: MANY },
+      { field: 'member', headerName: 'Member', flex: 1.3, minWidth: 140, filter: 'agTextColumnFilter', filterParams: MANY },
+      { field: 'kind', headerName: 'Type', width: 96, filter: 'agTextColumnFilter', filterParams: MANY },
       {
         field: 'amount',
         headerName: 'Amount',
@@ -112,17 +113,27 @@ export function Ledger({ snap }: { snap: Snapshot }) {
         type: 'rightAligned',
         valueFormatter: (p) => money(p.value ?? 0),
         filter: 'agNumberColumnFilter',
+        filterParams: MANY,
       },
       {
         field: 'status',
         headerName: 'Status',
         width: 150,
-        filter: true,
+        filter: 'agTextColumnFilter',
+        filterParams: MANY,
         cellRenderer: (p: { value: string }) => <span className={`pill ${STATUS_CLASS[p.value] ?? ''}`}>{p.value}</span>,
       },
-      { field: 'method', headerName: 'Paid through', flex: 1.4, minWidth: 170, filter: true },
-      { field: 'reference', headerName: 'PayPal reference', flex: 1.5, minWidth: 190, filter: true },
-      { field: 'date', headerName: 'Date', width: 100, valueFormatter: (p) => (p.value ? shortDay(p.value) : '') },
+      { field: 'method', headerName: 'Paid through', flex: 1.4, minWidth: 170, filter: 'agTextColumnFilter', filterParams: MANY },
+      { field: 'reference', headerName: 'PayPal reference', flex: 1.5, minWidth: 190, filter: 'agTextColumnFilter', filterParams: MANY },
+      {
+        field: 'date',
+        headerName: 'Date',
+        width: 100,
+        cellDataType: false,
+        valueFormatter: (p) => (p.value ? shortDay(p.value) : ''),
+        filter: 'agDateColumnFilter',
+        filterParams: { ...MANY, comparator: compareDay },
+      },
     ],
     [],
   );
@@ -143,10 +154,50 @@ export function Ledger({ snap }: { snap: Snapshot }) {
           />
         </label>
       </div>
+      <form
+        className="ask-ledger"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void ask(question);
+        }}
+      >
+        <label htmlFor="ask-ledger-input">Ask the ledger</label>
+        <div className="ask-row">
+          <input
+            id="ask-ledger-input"
+            value={question}
+            maxLength={300}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="Who paid cash?"
+          />
+          <button type="submit" className="primary" disabled={asking || !question.trim()}>
+            {asking ? 'Reading…' : 'Ask'}
+          </button>
+        </div>
+        <div className="ask-examples" aria-label="Example questions">
+          {EXAMPLES.map((text) => (
+            <button key={text} type="button" disabled={asking} onClick={() => void ask(text)}>
+              {text}
+            </button>
+          ))}
+        </div>
+        {reply && (
+          <p className={`ask-reply ${reply.understood ? '' : 'unsure'}`} role="status">
+            {reply.answer}
+            {reply.understood && shown && ` ${shownLine(shown)}`}{' '}
+            <button type="button" className="link" onClick={clear}>
+              {reply.understood ? 'Clear' : 'Dismiss'}
+            </button>
+          </p>
+        )}
+      </form>
       <div className="grid-box">
         <AgGridReact<Row>
+          ref={grid}
           theme={theme}
           rowData={rows}
+          onFilterChanged={countShown}
+          onRowDataUpdated={countShown}
           columnDefs={columns}
           quickFilterText={q}
           getRowId={(p) => `${p.data.kind}-${p.data.week}-${p.data.member}`}

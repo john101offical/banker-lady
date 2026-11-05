@@ -321,8 +321,63 @@ assert.equal((await plan({ draft: twoPeople('a new detail'), editing: true })).s
 assert.equal(store.member('ana').privateDetail, 'a new detail');
 assert.equal((await plan({ draft: twoPeople() })).status, 200);
 assert.equal(store.member('ana').privateDetail, undefined, 'a new circle starts clean');
-server.close();
 console.log('✓ the form keeps private details through a change, and a new circle starts clean');
+
+// 17. Ask the ledger, with no model: keyword rules write a filter AG Grid can use.
+const { buildFilterModel, ledgerByRules, answerLedgerQuestion } = await import('./banker/ledger.js');
+const { ledgerRows } = await import('../shared/ledger.js');
+await loadScene('demo');
+await actions.recordCash('joyce');
+const ledger = ledgerRows(store.snapshot());
+const byRules = (question: string) => ledgerByRules(question, ledger, W);
+assert.deepEqual(byRules('who paid cash?').filterModel, { method: { filterType: 'text', type: 'contains', filter: 'cash' } });
+assert.deepEqual(byRules('Who still owes this week?').filterModel, {
+  status: { filterType: 'text', operator: 'OR', conditions: [{ filterType: 'text', type: 'equals', filter: 'Due' }, { filterType: 'text', type: 'equals', filter: 'Reminded' }] },
+  week: { filterType: 'number', type: 'equals', filter: 3 },
+});
+assert.deepEqual(byRules('Show me the draws').filterModel, { kind: { filterType: 'text', type: 'equals', filter: 'Draw' } });
+assert.deepEqual(byRules('Anything over $100?').filterModel, { amount: { filterType: 'number', type: 'greaterThan', filter: 100 } });
+assert.deepEqual(byRules("Devon's hands in week 2").filterModel, {
+  kind: { filterType: 'text', type: 'equals', filter: 'Hand' },
+  member: { filterType: 'text', type: 'contains', filter: 'Devon Campbell' },
+  week: { filterType: 'number', type: 'equals', filter: 2 },
+});
+assert.equal(byRules('what is the capital of France?').understood, false);
+assert.deepEqual(byRules('what is the capital of France?').filterModel, {});
+assert.equal((await answerLedgerQuestion('who paid cash?', store.state)).source, 'rules');
+const asked = await (await fetch(`${base}/api/ledger/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: 'who paid cash?' }) })).json();
+assert.equal(asked.understood, true);
+assert.equal((await fetch(`${base}/api/ledger/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 400);
+console.log('✓ the ledger answers with keyword rules →', byRules('Who still owes this week?').answer);
+
+// Whatever it's given, only real columns and operators reach the grid.
+assert.deepEqual(
+  buildFilterModel([
+    { column: 'password', match: 'any', conditions: [{ op: 'equals', value: 'x' }] },
+    { column: 'status', match: 'any', conditions: [{ op: 'greaterThan', value: 'Due' }] },
+    { column: 'amount', match: 'any', conditions: [{ op: 'greaterThan', value: 'lots' }] },
+    { column: 'date', match: 'any', conditions: [{ op: 'equals', value: 'next Tuesday' }] },
+    { column: 'member', match: 'any', conditions: [{ op: 'contains', value: '   ' }] },
+    { column: 'kind', conditions: 'nope' },
+    null,
+  ]),
+  {},
+);
+assert.deepEqual(buildFilterModel('not a list'), {});
+assert.deepEqual(buildFilterModel([{ column: 'amount', match: 'any', conditions: [{ op: 'inRange', value: '$1,000', valueTo: '2000' }] }]), {
+  amount: { filterType: 'number', type: 'inRange', filter: 1000, filterTo: 2000 },
+});
+assert.deepEqual(buildFilterModel([{ column: 'date', match: 'any', conditions: [{ op: 'greaterThan', value: '2026-11-30' }] }]), {
+  date: { filterType: 'date', type: 'greaterThan', dateFrom: '2026-11-30 00:00:00', dateTo: null },
+});
+const twice = buildFilterModel([
+  { column: 'week', match: 'any', conditions: [{ op: 'greaterThan', value: '1' }] },
+  { column: 'week', match: 'any', conditions: [{ op: 'lessThan', value: '3' }] },
+]) as Record<string, { operator: string }>;
+assert.equal(twice.week.operator, 'AND', 'two clauses on a column must both hold');
+const many = buildFilterModel([{ column: 'member', match: 'any', conditions: Array.from({ length: 9 }, (_, i) => ({ op: 'contains', value: `P${i}` })) }]) as Record<string, { conditions: unknown[] }>;
+assert.equal(many.member.conditions.length, 4, 'the grid allows four');
+console.log('✓ only real columns and operators reach the grid');
 
 console.log('\nActivity (newest first):');
 for (const a of store.state.activity.slice(0, 14)) console.log(` - [${a.kind}] ${a.text}`);

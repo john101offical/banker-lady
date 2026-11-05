@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as actions from './actions.js';
 import { bankerRespond } from './banker/agent.js';
+import { answerLedgerQuestion } from './banker/ledger.js';
 import { readCircleDescription } from './banker/setup.js';
 import { aiModel, aiProvider, hasOpenRouter } from './config.js';
 import { cleanDraft } from './domain/setup.js';
@@ -128,6 +129,15 @@ app.post(
 app.post(
   '/api/paypal/refresh',
   route(async () => ({ result: await actions.refreshFromPayPal() })),
+);
+
+app.post(
+  '/api/ledger/ask',
+  route(async (req) => {
+    const question = String(req.body?.question ?? '').trim().slice(0, 300);
+    if (!question) throw Object.assign(new Error('Ask a question first.'), { status: 400 });
+    return answerLedgerQuestion(question, store.state);
+  }),
 );
 
 const utcToday = () => new Date().toISOString().slice(0, 10);

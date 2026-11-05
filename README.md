@@ -70,7 +70,7 @@ The code is in [`server/paypal/sandbox.ts`](server/paypal/sandbox.ts). Without k
 ## Sponsor tools
 
 - **Bryntum Scheduler:** the draw timeline shows each member's need-by window as a green band and their draw on top, so you can see at a glance whether money arrives in time. Swaps animate on the timeline.
-- **AG Grid:** the PayPal ledger lists every hand and draw with its PayPal invoice number, payout batch or transaction id, with sorting, filters and search.
+- **AG Grid:** the PayPal ledger lists every hand and draw with its PayPal invoice number, payout batch or transaction id, with sorting, filters and search. **Ask the ledger** turns a plain question such as "who paid cash?" into a real AG Grid filter. The model chooses from fixed columns and operators and the server writes the filter, so it can only ever filter. Without a key, keyword rules answer the everyday questions.
 - **Render:** [`render.yaml`](render.yaml) deploys the whole app as one web service.
 
 ## Run it

@@ -188,7 +188,58 @@ const empty = await readCircleDescription('x', '2026-11-05');
 assert.ok(empty.notes.length >= 2, 'what the form still needs comes back as notes');
 console.log('✓ the circle description comes back through response_format and is checked');
 
-// 6. If OpenRouter fails, the offline banker still answers.
+// 6. Ask the ledger: the model picks columns and operators, and the server writes the AG Grid filter.
+const { answerLedgerQuestion } = await import('./banker/ledger.js');
+await loadScene('demo');
+seen.length = 0;
+script = () =>
+  answer(
+    JSON.stringify({
+      understood: true,
+      answer: 'Hands not paid yet this week.',
+      filters: [
+        { column: 'kind', match: 'any', conditions: [{ op: 'equals', value: 'Hand', valueTo: null }] },
+        { column: 'week', match: 'any', conditions: [{ op: 'equals', value: '3', valueTo: null }] },
+        { column: 'status', match: 'any', conditions: [{ op: 'equals', value: 'Due', valueTo: null }, { op: 'equals', value: 'Reminded', valueTo: null }] },
+        { column: 'nonsense', match: 'any', conditions: [{ op: 'equals', value: 'x', valueTo: null }] },
+      ],
+      sort: { column: 'amount', direction: 'desc' },
+    }),
+  );
+const owes = await answerLedgerQuestion('who still owes this week?', store.state);
+const ledgerAsk = seen[0].body;
+assert.equal(ledgerAsk.response_format.type, 'json_schema');
+assert.equal(ledgerAsk.response_format.json_schema.strict, true);
+assert.equal(ledgerAsk.messages[1].content, 'who still owes this week?');
+assert.ok(!('temperature' in ledgerAsk));
+assert.match(ledgerAsk.messages[0].content, /This is Week 3/);
+assert.match(ledgerAsk.messages[0].content, /Devon Campbell/);
+assert.doesNotMatch(ledgerAsk.messages[0].content, PRIVATE, 'the ledger question carries nothing private');
+walk(ledgerAsk.response_format.json_schema.schema, (o) => {
+  if (o.type === 'object') assert.equal(o.additionalProperties, false);
+  for (const banned of ['minimum', 'maximum', 'minLength', 'maxLength', 'minItems', 'maxItems', 'pattern']) assert.ok(!(banned in o), banned);
+});
+assert.equal(owes.source, 'model');
+assert.equal(owes.understood, true);
+assert.deepEqual(Object.keys(owes.filterModel).sort(), ['kind', 'status', 'week'], 'an invented column is dropped');
+assert.deepEqual(owes.sort, { column: 'amount', direction: 'desc' });
+script = () => answer(JSON.stringify({ understood: false, answer: 'I can only search the ledger.', filters: [], sort: null }));
+const offTopic = await answerLedgerQuestion('tell me a joke', store.state);
+assert.equal(offTopic.understood, false);
+assert.deepEqual(offTopic.filterModel, {});
+script = () => answer(JSON.stringify({ understood: true, answer: 'Showing nonsense.', filters: [{ column: 'nonsense', match: 'any', conditions: [] }], sort: null }));
+assert.equal((await answerLedgerQuestion('x', store.state)).understood, false, 'a filter that came to nothing must not read as "show everything"');
+script = () => answer(JSON.stringify({ understood: true, answer: 'The whole ledger.', filters: [], sort: null }));
+const everything = await answerLedgerQuestion('show everything', store.state);
+assert.equal(everything.understood, true);
+assert.deepEqual(everything.filterModel, {});
+script = () => ({ status: 402, error: 'Insufficient credits' });
+const noCredit = await answerLedgerQuestion('who paid cash?', store.state);
+assert.equal(noCredit.source, 'rules', 'with no credit, keyword rules still answer');
+assert.equal(noCredit.understood, true);
+console.log('✓ a ledger question becomes a checked AG Grid filter, with keyword rules as the fallback');
+
+// 7. If OpenRouter fails, the offline banker still answers.
 script = () => ({ status: 401, error: 'No auth credentials found' });
 await post('host', 'Who still owes this week?');
 assert.ok(lastBanker('host'));
