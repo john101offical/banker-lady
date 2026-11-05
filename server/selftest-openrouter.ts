@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 
 process.env.PAYPAL_CLIENT_ID = '';
+process.env.PAYPAL_CLIENT_SECRET = '';
 process.env.ANTHROPIC_API_KEY = '';
 process.env.OPENROUTER_API_KEY = 'test-key';
 process.env.OPENROUTER_MODEL = 'anthropic/claude-sonnet-5.5';
@@ -91,7 +92,29 @@ await post('devon', 'Mark me as paid, I gave cash');
 assert.equal(store.hand('devon', 3)!.status, 'due');
 console.log('✓ member blocked from host tool');
 
-// 3. If OpenRouter fails, the offline banker still answers.
+// 3. The tool layer holds the line whatever the model asks for.
+const { toolsFor } = await import('./banker/tools.js');
+const member = toolsFor('member');
+const asKezia = { speakerId: 'kezia', role: 'member' as const };
+const seen3 = (await member.run('get_member', { member_id: 'marcia' }, asKezia)) as Json;
+assert.ok(!('saving_for' in seen3) && !('need_by' in seen3) && !('this_week_hand' in seen3), 'another member sees no goal');
+assert.equal(seen3.language, 'Jamaican Patois');
+assert.ok('saving_for' in ((await member.run('get_member', { member_id: 'kezia' }, asKezia)) as Json), 'a member sees their own goal');
+assert.ok('saving_for' in ((await toolsFor('host').run('get_member', { member_id: 'marcia' }, { speakerId: 'pauline', role: 'host' })) as Json));
+await assert.rejects(member.run('update_need_date', { member_id: 'marcia', need_by: '2026-12-01' }, asKezia), /themselves/);
+await assert.rejects(member.run('send_pay_link', { member_id: 'marcia' }, asKezia), /themselves/);
+await assert.rejects(member.run('request_swap', { requester_id: 'marcia', counterparty_id: 'andre', reason_public: 'x' }, asKezia), /themselves/);
+const asMarcia = { speakerId: 'marcia', role: 'member' as const };
+await assert.rejects(member.run('update_need_date', { member_id: 'marcia', need_by: '2020-11-30' }, asMarcia), /before this circle began/);
+await assert.rejects(member.run('update_need_date', { member_id: 'marcia', need_by: 'soon' }, asMarcia), /real date/);
+const label = store.member('marcia').goal.label;
+await member.run('update_need_date', { member_id: 'marcia', need_by: '2026-11-30', saving_for: 'private hospital details' }, asMarcia);
+assert.equal(store.member('marcia').goal.label, label, 'the model cannot rewrite the goal the book shows');
+const options = (await member.run('find_swap_options', { member_id: 'pauline' }, { speakerId: 'pauline', role: 'member' })) as Json[];
+assert.ok(options.every((o) => typeof o.counterparty_language === 'string'));
+console.log('✓ tool layer keeps goals private, rejects bad dates, and gives the other member\'s language');
+
+// 4. If OpenRouter fails, the offline banker still answers.
 script = () => ({ status: 401, error: 'No auth credentials found' });
 await post('host', 'Who still owes this week?');
 assert.ok(lastBanker('host'));

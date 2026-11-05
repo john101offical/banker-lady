@@ -8,7 +8,7 @@ Banker Lady is an AI banker for partner (susu, tanda, committee) savings circles
 - `npm install`
 - `npm run dev` runs the server on :8787 and the web app on :5173 with hot reload
 - `npm run build` builds the web app into `dist/web`; `npm start` serves everything on :8787
-- `npm test` walks the whole demo script against mock PayPal and the offline banker, then checks the OpenRouter tool loop against a scripted stand-in; it must keep passing
+- `npm test` walks the whole demo script against mock PayPal and the offline banker, then checks the OpenRouter tool loop against a scripted stand-in; it must keep passing. It blanks every key itself, so it costs nothing and never touches real services, even with a full `.env`
 - `npm run typecheck` checks the server; `npx tsc --noEmit -p web/tsconfig.json` checks the web app
 
 ## Map
@@ -27,7 +27,7 @@ Banker Lady is an AI banker for partner (susu, tanda, committee) savings circles
 - Members can only act for themselves; enforce it in the tool layer, not just the prompt.
 - Keep mock PayPal and the offline banker working: judges may run the app with no keys.
 - Never commit secrets. Keys live in `.env` locally and in Render's environment settings.
-- Keep a member's private reasons private: others only hear "a family emergency".
+- Keep a member's private reasons private: others only hear "a family emergency". The tool layer enforces this too: `get_member` hides other members' goals, and the model can't rewrite the goal text the book shows.
 - UI copy is plain and sentence case. Colours and fonts are CSS variables at the top of `web/src/styles.css` (ballpoint ink on a ruled exercise book, violet stamps for draws).
 - After changes: `npm test`, both type checks, and a screenshot of the running app to check the UI.
 

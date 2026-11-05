@@ -2,7 +2,10 @@
 // Run with: npm test
 import assert from 'node:assert/strict';
 
+// Blank every key so a local .env can't send this test to real services.
 process.env.PAYPAL_CLIENT_ID = '';
+process.env.PAYPAL_CLIENT_SECRET = '';
+process.env.OPENROUTER_API_KEY = '';
 process.env.ANTHROPIC_API_KEY = '';
 
 const { buildDemoScene, loadScene } = await import('./seed.js');
@@ -10,6 +13,9 @@ const actions = await import('./actions.js');
 const { bankerRespond } = await import('./banker/agent.js');
 const { store } = await import('./store.js');
 const { gateway } = await import('./paypal/index.js');
+const { aiProvider } = await import('./config.js');
+assert.equal(aiProvider, 'offline');
+assert.equal(gateway.mode, 'mock');
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(check: () => boolean, label: string, ms = 8000) {

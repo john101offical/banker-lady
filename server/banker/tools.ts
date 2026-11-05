@@ -1,6 +1,7 @@
 // The tools the AI banker can use. Each one calls the same actions as the app's buttons.
 // Money never moves from here: payouts only create an approval request for the host.
 import type Anthropic from '@anthropic-ai/sdk';
+import type { LanguageCode } from '../../shared/types.js';
 import * as actions from '../actions.js';
 import { drawWeekOf, findSwapOptions, weekDate } from '../domain/circle.js';
 import { longDay, money, shortDay } from '../domain/dates.js';
@@ -18,6 +19,13 @@ interface BankerTool {
   roles: Role[];
   run(input: Record<string, any>, ctx: ToolContext): Promise<unknown> | unknown;
 }
+
+const LANGUAGE_NAME: Record<LanguageCode, string> = {
+  en: 'English',
+  jm: 'Jamaican Patois',
+  es: 'Spanish',
+  ht: 'Haitian Creole',
+};
 
 const memberIdProp = () => ({
   type: 'string' as const,
@@ -55,6 +63,21 @@ function memberView(id: string) {
   };
 }
 
+/** What one member may see about another: when they draw and how to write to them. Goals stay private. */
+function publicView(id: string) {
+  const s = store.state;
+  const m = store.member(id);
+  const week = drawWeekOf(s.circle, id);
+  return {
+    member_id: m.id,
+    call_name: m.callName,
+    language: LANGUAGE_NAME[m.language],
+    draw_week: week,
+    draw_date: longDay(weekDate(s.circle, week)),
+    draw_status: store.draw(week)?.status,
+  };
+}
+
 const TOOLS = (): BankerTool[] => [
   {
     def: {
@@ -69,11 +92,15 @@ const TOOLS = (): BankerTool[] => [
   {
     def: {
       name: 'get_member',
-      description: "One member's goal, need-by date, language, draw week and this week's hand.",
+      description:
+        "One member's language, draw week and status. For the host, or for a member asking about themselves, also their goal, need-by date and this week's hand. Other members' goals are private.",
       input_schema: { type: 'object', properties: { member_id: memberIdProp() }, required: ['member_id'] },
     },
     roles: ['host', 'member'],
-    run: (input) => memberView(String(input.member_id)),
+    run: (input, ctx) => {
+      const id = String(input.member_id);
+      return ctx.role === 'member' && id !== ctx.speakerId ? publicView(id) : memberView(id);
+    },
   },
   {
     def: {
@@ -89,6 +116,7 @@ const TOOLS = (): BankerTool[] => [
       return findSwapOptions(s.circle, s.members, s.draws, id).map((o) => ({
         counterparty_id: o.counterpartyId,
         counterparty: store.member(o.counterpartyId).callName,
+        counterparty_language: LANGUAGE_NAME[store.member(o.counterpartyId).language],
         target_week: o.targetWeek,
         target_date: longDay(o.targetDate),
         counterparty_would_move_to: `Week ${o.counterpartyNewWeek} (${longDay(o.counterpartyNewDate)})`,
@@ -102,13 +130,12 @@ const TOOLS = (): BankerTool[] => [
     def: {
       name: 'update_need_date',
       description:
-        "Record that a member now needs their money by a new date, e.g. after an emergency. For 'now' or 'as soon as possible', use the current week's draw date.",
+        "Record that a member now needs their money by a new date, e.g. after an emergency. For 'now' or 'as soon as possible', use this week's draw_date_iso from get_circle_status.",
       input_schema: {
         type: 'object',
         properties: {
           member_id: memberIdProp(),
-          need_by: { type: 'string', description: 'YYYY-MM-DD' },
-          saving_for: { type: 'string', description: 'Optional new description of what the money is for' },
+          need_by: { type: 'string', description: 'YYYY-MM-DD, with the year taken from the circle dates' },
         },
         required: ['member_id', 'need_by'],
       },
@@ -118,8 +145,17 @@ const TOOLS = (): BankerTool[] => [
       const id = selfOnly(input, ctx);
       const m = store.member(id);
       const needBy = String(input.need_by).slice(0, 10);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(needBy)) throw new Error('need_by must be YYYY-MM-DD');
-      m.goal = { label: input.saving_for ? String(input.saving_for) : m.goal.label, needBy };
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(needBy) || Number.isNaN(Date.parse(needBy))) {
+        throw new Error('need_by must be a real date written YYYY-MM-DD');
+      }
+      const { circle } = store.state;
+      if (needBy < circle.startDate) {
+        throw new Error(
+          `need_by ${needBy} is before this circle began on ${circle.startDate}. This week's draw date is ${weekDate(circle, circle.currentWeek)}.`,
+        );
+      }
+      // The goal's wording stays as it is: the book shows it, and an emergency's details are private.
+      m.goal = { ...m.goal, needBy };
       store.log('banker', `${m.callName} now needs the money by ${shortDay(needBy)}.`);
       return { ok: true, need_by: longDay(needBy) };
     },
@@ -128,7 +164,7 @@ const TOOLS = (): BankerTool[] => [
     def: {
       name: 'request_swap',
       description:
-        "Ask another member, in their chat, to swap draw weeks with the requester. Nothing changes until they accept. Use only an option from find_swap_options with allowed=true, preferring harm_days=0. reason_public is all the other member learns about why; keep it general, e.g. 'a family emergency'. Write message_to_counterparty in the counterparty's language, include both dates, and say nothing changes unless they agree.",
+        "Ask another member, in their chat, to swap draw weeks with the requester. Nothing changes until they accept. Use only an option from find_swap_options with allowed=true, preferring harm_days=0. reason_public is all the other member learns about why; keep it general, e.g. 'a family emergency'. Write message_to_counterparty in counterparty_language from find_swap_options, not the requester's language; include both dates, and say nothing changes unless they agree.",
       input_schema: {
         type: 'object',
         properties: {
@@ -249,8 +285,23 @@ export function toolsFor(role: Role) {
     defs: list.map((t) => t.def),
     async run(name: string, input: Record<string, any>, ctx: ToolContext): Promise<unknown> {
       const tool = list.find((t) => t.def.name === name);
-      if (!tool) throw new Error(`Tool ${name} isn't available here.`);
-      return tool.run(input ?? {}, ctx);
+      const started = Date.now();
+      const trace = (outcome: string) =>
+        console.log(
+          `[banker] ${ctx.role}/${ctx.speakerId} ${name} ${outcome} ${Date.now() - started}ms${process.env.BANKER_DEBUG ? ` ${JSON.stringify(input)}` : ''}`,
+        );
+      if (!tool) {
+        trace('refused');
+        throw new Error(`Tool ${name} isn't available here.`);
+      }
+      try {
+        const out = await tool.run(input ?? {}, ctx);
+        trace('ok');
+        return out;
+      } catch (e) {
+        trace('error');
+        throw e;
+      }
     },
   };
 }

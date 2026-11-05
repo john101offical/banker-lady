@@ -627,6 +627,7 @@ export function statusFor(week = store.state.circle.currentWeek) {
     this_week: {
       week,
       draw_date: longDay(weekDate(circle, week)),
+      draw_date_iso: weekDate(circle, week),
       recipient: recipientOf(week).callName,
       draw_status: store.draw(week)?.status,
       hands: handsFor(week).map((h) => ({
