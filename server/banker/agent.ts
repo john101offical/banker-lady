@@ -104,7 +104,14 @@ async function create(params: Anthropic.MessageCreateParamsNonStreaming): Promis
   return client.messages.create(params);
 }
 
-async function claudeReply(thread: string, role: Role, speaker: ServerMember): Promise<string> {
+// Tools that reach another person or PayPal. If one of these has run and the model then fails,
+// the offline banker must not act on the same message and do it a second time.
+const REACHES_SOMEONE = new Set(['request_swap', 'send_pay_link', 'record_cash_hand', 'send_hand_reminder', 'request_draw_payout', 'message_member']);
+const CUT_OFF = "I got part of that done, then lost my connection. Have a look at the book, and send it again if something's missing.";
+
+type OnToolDone = (name: string) => void;
+
+async function claudeReply(thread: string, role: Role, speaker: ServerMember, onToolDone: OnToolDone): Promise<string> {
   const tools = toolsFor(role);
   const convo: Anthropic.MessageParam[] = history(thread);
   const system = systemPrompt(role, speaker);
@@ -117,6 +124,7 @@ async function claudeReply(thread: string, role: Role, speaker: ServerMember): P
         if (block.type !== 'tool_use') continue;
         try {
           const out = await tools.run(block.name, block.input as Record<string, any>, { speakerId: speaker.id, role });
+          onToolDone(block.name);
           results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(out ?? { ok: true }) });
         } catch (e) {
           results.push({
@@ -140,7 +148,7 @@ async function claudeReply(thread: string, role: Role, speaker: ServerMember): P
   return "I've done what I can for now. Ask me again if anything is still open.";
 }
 
-async function viaOpenRouter(thread: string, role: Role, speaker: ServerMember): Promise<string> {
+async function viaOpenRouter(thread: string, role: Role, speaker: ServerMember, onToolDone: OnToolDone): Promise<string> {
   const tools = toolsFor(role);
   return openRouterReply({
     apiKey: config.openrouter.apiKey,
@@ -149,7 +157,11 @@ async function viaOpenRouter(thread: string, role: Role, speaker: ServerMember):
     system: systemPrompt(role, speaker),
     history: history(thread),
     tools: tools.defs,
-    runTool: (name, input) => tools.run(name, input, { speakerId: speaker.id, role }),
+    runTool: async (name, input) => {
+      const out = await tools.run(name, input, { speakerId: speaker.id, role });
+      onToolDone(name);
+      return out;
+    },
   });
 }
 
@@ -164,12 +176,16 @@ export async function bankerRespond(thread: string): Promise<void> {
   try {
     let text: string;
     if (aiProvider !== 'offline' && aiBudget.take()) {
+      let reachedSomeone = false;
+      const onToolDone: OnToolDone = (name) => {
+        if (REACHES_SOMEONE.has(name)) reachedSomeone = true;
+      };
       try {
-        text = aiProvider === 'openrouter' ? await viaOpenRouter(thread, role, speaker) : await claudeReply(thread, role, speaker);
+        text = aiProvider === 'openrouter' ? await viaOpenRouter(thread, role, speaker, onToolDone) : await claudeReply(thread, role, speaker, onToolDone);
       } catch (e) {
         const why = e instanceof Error ? e.message : String(e);
-        store.log('system', `The AI model was unavailable (${why.slice(0, 160)}); answered with offline rules.`);
-        text = await offlineReply(thread, role, speaker, latest);
+        store.log('system', `The AI model was unavailable (${why.slice(0, 160)}); answered with ${reachedSomeone ? 'a short note' : 'offline rules'}.`);
+        text = reachedSomeone ? CUT_OFF : await offlineReply(thread, role, speaker, latest);
       }
     } else {
       await new Promise((r) => setTimeout(r, 700));

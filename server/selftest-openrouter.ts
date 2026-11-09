@@ -246,5 +246,26 @@ assert.ok(lastBanker('host'));
 assert.ok(store.state.activity.some((a) => a.text.includes('OpenRouter 401')));
 console.log('✓ falls back to offline rules →', lastBanker('host'));
 
+// 8. If the model fails after it has already asked someone, the offline banker must not ask again.
+await loadScene('demo');
+script = (body) => {
+  const results = body.messages.filter((m: Json) => m.role === 'tool');
+  if (results.length === 0) return toolTurn(call('d1', 'find_swap_options', { member_id: 'marcia' }));
+  if (results.length === 1) return toolTurn(call('d2', 'request_swap', { requester_id: 'marcia', counterparty_id: 'kezia' }));
+  return { status: 402, error: 'Insufficient credits' };
+};
+await post('marcia', 'I need my draw early, it is an emergency.');
+assert.equal(store.state.swaps.length, 1, 'one swap request, not a second one from the fallback');
+assert.equal(store.state.messages.filter((m) => m.thread === 'kezia' && m.kind === 'swap_request').length, 1, 'Kezia is asked once');
+assert.ok(lastBanker('marcia'), 'Marcia still gets a reply');
+console.log('✓ a model failure after a swap request does not ask twice →', lastBanker('marcia'));
+
+// And a failure before anything was sent still gets the offline banker's full help.
+await loadScene('demo');
+script = () => ({ status: 402, error: 'Insufficient credits' });
+await post('marcia', 'I need my draw early, it is an emergency.');
+assert.equal(store.state.swaps.length, 1, 'the offline banker still handles the emergency');
+console.log('✓ a model failure before anything was sent still gets the offline banker');
+
 console.log('\nOpenRouter checks passed.');
 process.exit(0);
