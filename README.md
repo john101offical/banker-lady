@@ -15,6 +15,8 @@ Banker Lady keeps the warmth of the banker and removes the single point of failu
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/).
 
+**Try it live: https://banker-lady.onrender.com.** It runs on the PayPal sandbox, so no real money moves. It's on Render's free plan, so allow up to a minute for it to wake.
+
 ## The demo circle
 
 The app starts in Week 3 of the Ward 4 Partner: six members, $50 a week, a $300 draw every Monday. Weeks 1 and 2 were imported from the host's paper partner book.
@@ -32,7 +34,7 @@ Walk through it in about two minutes:
 
 1. **Miss P's phone (host):** tap "Joyce gave me cash". Banker Lady records the cash on Joyce's PayPal invoice.
 2. Tap "Remind Devon, kindly". Devon gets a warm reminder in Patois with a PayPal pay button, and PayPal sends its own invoice reminder.
-3. **Devon's phone:** tap **Pay with PayPal**. All six hands are now in, and an approval appears for Kezia's draw.
+3. **Devon's phone:** tap **Pay with PayPal** and log in with a sandbox personal account. Without one, tap **Cash** on Devon's row in the book instead. All six hands are now in, and an approval appears for Kezia's draw.
 4. **Marcia's phone:** her mother is in hospital. Send the suggested message (or record a voice note). Banker Lady finds that Kezia can swap Week 3 for Week 6 and still have her money 14 days before her fees are due, and asks her. Everyone else, Kezia and the host included, only ever sees "family emergency".
 5. **Kezia's phone:** tap **Yes, swap**. The draw stamp moves in the book and the timeline.
 6. **Approve payout** at the top. $300 lands in Marcia's PayPal.
