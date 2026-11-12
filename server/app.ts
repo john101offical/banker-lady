@@ -1,5 +1,5 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as actions from './actions.js';
@@ -215,8 +215,28 @@ app.post(
   }),
 );
 
-// The built web app.
 const here = dirname(fileURLToPath(import.meta.url));
+
+// The landing page for judges, at / only. The app answers everywhere else, and /api is untouched.
+// The sandbox buyer login is filled in from the environment, so it never sits in a committed file.
+const landingDir = join(here, '..', 'landing');
+if (existsSync(join(landingDir, 'index.html'))) {
+  const landingPage = readFileSync(join(landingDir, 'index.html'), 'utf8');
+  const escapeHtml = (s: string) =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+  app.get('/', (_req, res) => {
+    const email = process.env.SANDBOX_BUYER_EMAIL?.trim();
+    const password = process.env.SANDBOX_BUYER_PASSWORD?.trim();
+    const login =
+      email && password
+        ? `<p class="login"><strong>Sandbox buyer login</strong> for the Pay with PayPal button: <code>${escapeHtml(email)}</code> with password <code>${escapeHtml(password)}</code>. It is PayPal's test environment; the money isn't real.</p>`
+        : `<p class="login"><strong>Pay with PayPal</strong> needs a PayPal sandbox personal account (the Devpost testing instructions include one), or tap <strong>Cash</strong> on Devon's row and skip the login.</p>`;
+    res.type('html').send(landingPage.replace('<!--LOGIN-->', login));
+  });
+  app.use('/landing', express.static(landingDir, { maxAge: '1h' }));
+}
+
+// The built web app.
 const webDist = join(here, '..', 'dist', 'web');
 if (existsSync(webDist)) {
   app.use(express.static(webDist, { index: false, maxAge: '1h' }));

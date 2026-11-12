@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Banker Lady: an AI banker for partner, susu and tanda savings circles, built on PayPal."
+    />
+    <meta name="theme-color" content="#FBFCFE" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='6' width='52' height='52' rx='12' fill='none' stroke='%236A3FA0' stroke-width='5'/%3E%3Cpath d='M20 34l9 9 16-20' fill='none' stroke='%231F2F86' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+    <title>Banker Lady</title>
+    <style>
+      /* Same exercise-book palette as web/src/styles.css. */
+      :root {
+        --paper: #fbfcfe;
+        --sheet: #ffffff;
+        --tint: #f2f5fb;
+        --rule: #d7e2f3;
+        --rule-soft: #e8eef8;
+        --margin: #e9a3b1;
+        --ink: #1f2f86;
+        --ink-soft: #4a5bb0;
+        --text: #272b38;
+        --muted: #5d6478;
+        --stamp: #6a3fa0;
+        --stamp-tint: #f1ebf8;
+        --ok: #2c7a57;
+        --ok-bg: #e7f4ed;
+        --ui: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --hand: 'Caveat', 'Segoe Print', 'Bradley Hand', cursive;
+        color-scheme: light;
+      }
+      @font-face {
+        font-family: 'Atkinson Hyperlegible Next';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('/landing/fonts/atkinson-hyperlegible-next-latin-400-normal.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Atkinson Hyperlegible Next';
+        font-style: normal;
+        font-weight: 600;
+        font-display: swap;
+        src: url('/landing/fonts/atkinson-hyperlegible-next-latin-600-normal.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Atkinson Hyperlegible Next';
+        font-style: normal;
+        font-weight: 700;
+        font-display: swap;
+        src: url('/landing/fonts/atkinson-hyperlegible-next-latin-700-normal.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'Caveat';
+        font-style: normal;
+        font-weight: 600;
+        font-display: swap;
+        src: url('/landing/fonts/caveat-latin-600-normal.woff2') format('woff2');
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--text);
+        font: 16px/1.55 var(--ui);
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 28px 16px 60px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      a {
+        color: var(--ink);
+      }
+      :focus-visible {
+        outline: 2px solid var(--stamp);
+        outline-offset: 2px;
+      }
+
+      /* A sheet from the partner book: ruled lines and a pink margin. */
+      .sheet {
+        background: var(--sheet) repeating-linear-gradient(transparent, transparent 27px, var(--rule-soft) 27px, var(--rule-soft) 28px);
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(31, 47, 134, 0.06);
+        padding: 26px 22px 28px 30px;
+        position: relative;
+        overflow: hidden;
+        margin-top: 22px;
+      }
+      .sheet::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto 0 18px;
+        width: 2px;
+        background: var(--margin);
+        opacity: 0.6;
+      }
+
+      /* Hero */
+      .hero {
+        text-align: center;
+        padding: 40px 18px 36px;
+      }
+      .hero h1 {
+        font: 600 64px/1 var(--hand);
+        color: var(--ink);
+      }
+      .hero .pitch {
+        margin: 14px auto 0;
+        max-width: 620px;
+        font-size: 19px;
+        color: var(--text);
+      }
+      .buttons {
+        margin-top: 26px;
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .btn {
+        display: inline-block;
+        padding: 12px 22px;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 17px;
+        text-decoration: none;
+        border: 2px solid var(--ink);
+      }
+      .btn.primary {
+        background: var(--ink);
+        color: #fff;
+      }
+      .btn.secondary {
+        background: var(--sheet);
+        color: var(--ink);
+      }
+      .wake {
+        margin-top: 12px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      /* Story */
+      .story p {
+        font: 600 26px/1.45 var(--hand);
+        color: var(--ink-soft);
+        padding: 2px 0;
+      }
+      .story p strong {
+        color: var(--ink);
+      }
+
+      h2 {
+        font-size: 24px;
+        color: var(--ink);
+        margin-top: 44px;
+      }
+      .kicker {
+        display: inline-block;
+        background: var(--stamp-tint);
+        color: var(--stamp);
+        border: 1px solid var(--stamp);
+        border-radius: 6px;
+        padding: 1px 10px;
+        font: 700 13px/1.6 var(--ui);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-top: 46px;
+      }
+      .kicker + h2 {
+        margin-top: 8px;
+      }
+
+      /* How it works */
+      .how {
+        display: grid;
+        gap: 18px;
+        margin-top: 18px;
+      }
+      .how article {
+        background: var(--sheet);
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        padding: 18px;
+      }
+      .how h3 {
+        font-size: 17px;
+        color: var(--ink);
+      }
+      .how p {
+        margin-top: 6px;
+        color: var(--muted);
+      }
+      .how img {
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        margin-top: 14px;
+      }
+      @media (min-width: 720px) {
+        .how {
+          grid-template-columns: 1fr 1fr 1fr;
+        }
+      }
+
+      /* Try it */
+      ol.steps {
+        margin: 16px 0 0;
+        padding-left: 22px;
+        display: grid;
+        gap: 9px;
+      }
+      ol.steps li::marker {
+        color: var(--ink);
+        font-weight: 700;
+      }
+      .login {
+        margin-top: 18px;
+        background: var(--tint);
+        border: 1px dashed var(--ink-soft);
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 15px;
+      }
+      .login code {
+        background: var(--sheet);
+        border: 1px solid var(--rule);
+        border-radius: 5px;
+        padding: 1px 7px;
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+      .ledger-shot {
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        margin-top: 18px;
+      }
+
+      /* Built with */
+      .built {
+        margin-top: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 0;
+        list-style: none;
+      }
+      .built li {
+        background: var(--sheet);
+        border: 1px solid var(--rule);
+        border-radius: 999px;
+        padding: 4px 13px;
+        font-size: 14px;
+        color: var(--ink-soft);
+        font-weight: 600;
+      }
+      footer {
+        margin-top: 34px;
+        border-top: 1px solid var(--rule);
+        padding-top: 18px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      footer p + p {
+        margin-top: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <h1>Banker Lady</h1>
+        <p class="pitch">
+          An AI banker for partner, susu and tanda: the savings circles families have run on trust for generations,
+          now kept on PayPal where everyone can see the book.
+        </p>
+        <div class="buttons">
+          <a class="btn primary" href="/demo">Open the live demo</a>
+          <a class="btn secondary" href="https://youtu.be/Aa-HfJnn9S0">Watch the 3-minute video</a>
+        </div>
+        <p class="wake">The demo runs on PayPal's sandbox, so no real money moves. First load can take a minute while the free server wakes.</p>
+      </header>
+
+      <section class="sheet story" aria-label="The story">
+        <p>Partner, susu and tanda run on trust in one banker.</p>
+        <p>When that trust breaks, families lose everything.</p>
+        <p><strong>Banker Lady keeps her warmth, and lets everyone see the book.</strong></p>
+      </section>
+
+      <span class="kicker">How it works</span>
+      <h2>The AI does the banker's judgment work. PayPal moves the money.</h2>
+      <div class="how">
+        <article>
+          <h3>Every hand is a PayPal invoice</h3>
+          <p>Members pay in PayPal, and cash handed to the host is recorded on the same invoice, so the book and PayPal never disagree.</p>
+          <img src="/landing/06-ask-the-ledger.png" alt="The PayPal ledger grid filtered by the question: who paid cash?" width="1500" height="1000" loading="lazy" />
+        </article>
+        <article>
+          <h3>Every draw is a PayPal payout the host approves</h3>
+          <p>The AI can never move money. A draw becomes a payout only when the host taps Approve.</p>
+          <img src="/landing/03-host-approval.png" alt="The partner book with a payout waiting for the host's approval" width="1500" height="1000" loading="lazy" />
+        </article>
+        <article>
+          <h3>The AI arranges, people decide</h3>
+          <p>When someone needs their draw early, Banker Lady finds a swap that hurts nobody and asks, in that member's own language. Private reasons stay private.</p>
+          <img src="/landing/02-swap-request.png" alt="A phone showing a swap request that only says: a family emergency" width="1500" height="1000" loading="lazy" />
+        </article>
+      </div>
+
+      <span class="kicker">For judges</span>
+      <h2>Try it in two minutes</h2>
+      <div class="sheet">
+        <ol class="steps">
+          <li><strong>Miss P's phone (host):</strong> tap "Joyce gave me cash". The cash is recorded on Joyce's PayPal invoice.</li>
+          <li>Tap "Remind Devon, kindly". Devon gets a warm reminder in Patois, and PayPal sends its own invoice reminder.</li>
+          <li><strong>Devon's phone:</strong> tap <strong>Pay with PayPal</strong> and log in with the sandbox buyer below, or tap <strong>Cash</strong> on Devon's row in the book instead.</li>
+          <li><strong>Marcia's phone:</strong> her mother is in hospital. Send the suggested message. Banker Lady finds that Kezia can swap and still have her money 14 days before her school fees. The circle only ever sees "family emergency".</li>
+          <li><strong>Kezia's phone:</strong> tap <strong>Yes, swap</strong>. The draw stamp moves in the book and the timeline.</li>
+          <li>Tap <strong>Approve payout</strong>. $300 lands in Marcia's PayPal, and the <strong>PayPal ledger</strong> tab shows the payout.</li>
+        </ol>
+        <!--LOGIN-->
+        <p class="login" style="border-style: solid; margin-top: 10px">
+          <strong>Reset demo</strong> puts everything back, and <strong>Start a new circle</strong> shows the fair draw order with a reason for every draw.
+        </p>
+      </div>
+
+      <span class="kicker">Built with</span>
+      <h2>One path to money, whoever asks</h2>
+      <p style="margin-top: 10px; color: var(--muted)">
+        Buttons, the AI's tools and the offline fallback all call the same actions, so the AI has no way around the
+        host's approval. TypeScript throughout.
+      </p>
+      <ul class="built">
+        <li>PayPal Invoicing v2</li>
+        <li>PayPal Payouts v1</li>
+        <li>Claude (through OpenRouter)</li>
+        <li>Node + Express</li>
+        <li>React</li>
+        <li>Bryntum Scheduler</li>
+        <li>AG Grid</li>
+        <li>Render</li>
+      </ul>
+      <p style="margin-top: 16px">
+        <a href="https://github.com/john101offical/banker-lady">Source on GitHub</a> — MIT licensed, runs with no keys:
+        <code style="font-size: 14px">npm install &amp;&amp; npm run build &amp;&amp; npm start</code>
+      </p>
+
+      <footer>
+        <p>Members shown are demo personas.</p>
+        <p>Built for the PayPal AI Hackathon, 2026.</p>
+      </footer>
+    </main>
+  </body>
+</html>
